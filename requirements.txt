@@ -1,0 +1,15 @@
+# --- Core Deep Learning & Computer Vision ---
+torch
+torchvision
+numpy
+opencv-python
+
+# --- Natural Language Processing & Local Transformers ---
+transformers
+
+# --- Geospatial Data Processing & Math Utilities ---
+pandas
+scikit-learn
+
+# --- HDF5 Data Handling ---
+h5py

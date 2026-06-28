@@ -1,0 +1,28 @@
+# --- Ignore Heavy Datasets (Crucial!) ---
+datasets/
+*.h5
+*.npy
+*.zip
+*.tar.gz
+
+# --- Ignore Local Python Virtual Environments ---
+cosmoeye_env/
+env/
+venv/
+ENV/
+bin/
+lib/
+include/
+
+# --- Ignore Python Cache and System Files ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- Ignore Operating System Artifacts ---
+.DS_Store
+Thumbs.db
+desktop.ini
