@@ -13,3 +13,11 @@ scikit-learn
 
 # --- HDF5 Data Handling ---
 h5py
+
+
+# --- Core Data Processing ---
+xarray          # Multi-dimensional array handling for .h5 files
+h5netcdf        # Backend driver needed by xarray to read HDF5 format
+
+# --- Visualization & Tooling ---
+matplotlib      # Required by VS Code 'Scientific Data Viewer' extension
