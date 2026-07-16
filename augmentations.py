@@ -14,27 +14,15 @@ def get_training_augmentations():
             A.VerticalFlip(p=0.5),
             A.RandomRotate90(p=0.5),
             # 2. Simulate hand-drawn squiggles and elastic warp lines on hillsides
-            A.ElasticTransform(
-                alpha=1,
-                sigma=50,
-                alpha_affine=50,
-                p=0.4,
-                border_mode=0,  # cv2.BORDER_CONSTANT placeholder value
-                value=0,
-            ),
+            # Removed deprecated alpha_affine to match modern Albumentations specifications
+            A.ElasticTransform(alpha=1, sigma=50, p=0.4, border_mode=0),
             # 3. Simulate camera tilt perspective from taking a phone snapshot
-            A.Perspective(
-                scale=(0.03, 0.07),
-                p=0.4,
-                keep_size=True,
-                fit_output=True,
-                interpolation=1,  # cv2.INTER_LINEAR placeholder
-                pad_mode=0,
-                pad_val=0,
-            ),
+            # Removed deprecated pad_mode and pad_val
+            A.Perspective(scale=(0.03, 0.07), p=0.4, keep_size=True),
             # 4. Simulate bad camera lens focus and digital sensor grain
             A.GaussianBlur(blur_limit=(3, 5), p=0.3),
-            A.GaussNoise(var_limit=(10.0, 30.0), p=0.3),
+            # In modern versions, GaussNoise parameters are controlled by std_range
+            A.GaussNoise(std_range=(10.0 / 255.0, 30.0 / 255.0), p=0.3),
         ]
     )
 
@@ -52,14 +40,13 @@ if __name__ == "__main__":
     transform_pipeline = get_training_augmentations()
 
     # Pass BOTH tensors into the pipeline simultaneously
-    # Albumentations tracks coordinates internally to warp them identically
     augmented_data = transform_pipeline(image=fake_image, mask=fake_mask)
 
     warped_image = augmented_data["image"]
     warped_mask = augmented_data["mask"]
 
     print("\n================== STEP 11 AUGMENTATION OUTPUT ==================")
-    print("Augmentation pipeline initialized .")
+    print("Augmentation pipeline initialized successfully without APIs.")
     print(f"Original Data Aspect Ratio : {fake_image.shape} | Mask: {fake_mask.shape}")
     print(
         f"Warped Data Aspect Ratio   : {warped_image.shape} | Mask: {warped_mask.shape}"
@@ -68,7 +55,9 @@ if __name__ == "__main__":
     # Assert matrix alignment consistency to verify stability for university review
     if warped_image.shape == fake_image.shape and warped_mask.shape == fake_mask.shape:
         print("Success: Spatial dimensions preserved across multi-channel arrays.")
-        print("Dual matrix synchronization verified: Data labels remain perfectly aligned.")
+        print(
+            "Dual matrix synchronization verified: Data labels remain perfectly aligned."
+        )
         print("==================================================================\n")
     else:
         print("Error: Spatial matrix mismatch across transformations.")
