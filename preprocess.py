@@ -5,10 +5,11 @@ import numpy as np
 
 def compute_spectral_ndvi(h5_file_path):
     """Load a Landslide4Sense .h5 file and compute the NDVI matrix."""
-    
+
     # Open file and read image tensor (H, W, Bands)
     with h5py.File(h5_file_path, "r") as f:
-        image = np.array(f["image"])
+        # Fixed internal key to match the tekbahadurkshetri/landslide4sense layout
+        image = np.array(f["img"])
 
     # Extract Red (B4) and NIR (B8) bands
     red = image[:, :, 3].astype(np.float32)
@@ -44,7 +45,11 @@ if __name__ == "__main__":
 
             print("\n------ NDVI Output Summary ------")
             print(f"Shape        : {ndvi_result.shape}")
-            print(f"Min NDVI (Raw Rock/Mud Anomaly)    : {np.min(ndvi_result):.4f}")
-            print(f"Max NDVI (Dense Forest Canopy)     : {np.max(ndvi_result):.4f}")
+            print(
+                f"Min NDVI (Rock/Mud Anomaly)    : {np.min(ndvi_result):.4f}"
+            )
+            print(
+                f"Max NDVI (Dense Forest Canopy) : {np.max(ndvi_result):.4f}"
+            )
             print(f"Mean NDVI    : {np.mean(ndvi_result):.4f}")
             print("----------------------------------\n")
