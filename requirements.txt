@@ -3,6 +3,7 @@ torch
 torchvision
 numpy
 opencv-python
+albumentations
 
 # --- Natural Language Processing & Local Transformers ---
 transformers
