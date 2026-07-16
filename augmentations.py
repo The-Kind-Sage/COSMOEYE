@@ -46,7 +46,7 @@ if __name__ == "__main__":
     warped_mask = augmented_data["mask"]
 
     print("\n================== STEP 11 AUGMENTATION OUTPUT ==================")
-    print("Augmentation pipeline initialized successfully without APIs.")
+    print("Augmentation pipeline initialized")
     print(f"Original Data Aspect Ratio : {fake_image.shape} | Mask: {fake_mask.shape}")
     print(
         f"Warped Data Aspect Ratio   : {warped_image.shape} | Mask: {warped_mask.shape}"
