@@ -19,7 +19,7 @@ st.set_page_config(
 # Header interface
 st.title("COSMOS-EYE: Regional Disaster Risk Reduction Dashboard")
 st.caption("Change Observation and Satellite Monitoring Of Slopes — Localized Technical Control Room (Nepal)")
-st.hr()
+st.divider()
 
 # Sidebar: File loading and selection
 st.sidebar.header("Observation Vector Directory")
