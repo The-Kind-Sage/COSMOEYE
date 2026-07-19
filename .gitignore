@@ -22,6 +22,9 @@ __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
 
+# --- Ignore Heavy Model Weights ---
+local_models/t5_weights/*.safetensors
+
 # --- Ignore Operating System Artifacts ---
 .DS_Store
 Thumbs.db
