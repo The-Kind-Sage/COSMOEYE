@@ -11,6 +11,37 @@ from dataset import LandslideDataset
 from augmentations import get_training_augmentations
 
 
+
+class BCEDiceLoss(nn.Module):
+    """Custom Hybrid Loss implementation combining BCE and Dice Loss.
+    Provides early gradient stability via BCE and boundary optimization via Dice.
+    """
+    def __init__(self, epsilon=1e-6):
+        super(BCEDiceLoss, self).__init__()
+        self.epsilon = epsilon
+        # Internalize stable binary cross entropy calculation blocks
+        self.bce = nn.BCELoss()
+
+    def forward(self, predictions, masks):
+        # 1. Calculate Standard Stable BCE Loss
+        bce_loss = self.bce(predictions, masks)
+
+        # 2. Calculate Class Imbalance Correcting Dice Loss
+        preds_flat = predictions.view(-1)
+        masks_flat = masks.view(-1)
+        
+        intersection = torch.sum(preds_flat * masks_flat)
+        total_cardinality = torch.sum(preds_flat) + torch.sum(masks_flat)
+        
+        dice_coefficient = (2.0 * intersection + self.epsilon) / (total_cardinality + self.epsilon)
+        dice_loss = 1.0 - dice_coefficient
+
+        # 3. Combine both losses with a 50/50 balance ratio
+        return bce_loss + dice_loss
+
+
+
+
 def compute_evaluation_metrics(predictions, masks):
     """Calculates semantic segmentation evaluation metrics from raw tensors."""
     # Threshold probabilities to binary grids
@@ -76,7 +107,10 @@ def train_pipeline(epochs=10, batch_size=16, lr=1e-4):
 
     # 4. Initialize model, loss, optimizer, and augmentations
     model = CustomUNet(in_channels=14, out_channels=1).to(device)
-    criterion = nn.BCELoss()
+
+    # criterion = nn.BCELoss() Turn off to increase precision 
+    # criterion = DiceLoss() didnt worked as planed
+    criterion = BCEDiceLoss()  # For Hybrid approach
     optimizer = optim.Adam(model.parameters(), lr=lr)
     transforms = get_training_augmentations()
 
