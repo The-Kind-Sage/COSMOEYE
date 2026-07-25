@@ -3,6 +3,7 @@ import h5py
 import numpy as np
 import streamlit as st
 import matplotlib.pyplot as plt
+import tempfile
 
 # Import custom processing engines
 from preprocess import compute_spectral_ndvi
@@ -23,6 +24,17 @@ st.divider()
 
 # Sidebar: File loading and selection
 st.sidebar.header("Observation Vector Directory")
+
+uploaded_custom = st.sidebar.file_uploader("Or upload a custom .h5 file:", type=["h5"])
+custom_file_path = None
+
+if uploaded_custom is not None:
+    temp_handle = tempfile.NamedTemporaryFile(delete=False, suffix=".h5")
+    temp_handle.write(uploaded_custom.read())
+    custom_file_path = temp_handle.name
+    temp_handle.close()
+    st.sidebar.success(f"Loaded custom file: {uploaded_custom.name}")
+
 test_img_dir = "./datasets/TestData/img/"
 
 if not os.path.exists(test_img_dir):
@@ -31,16 +43,21 @@ if not os.path.exists(test_img_dir):
 else:
     test_files = sorted([f for f in os.listdir(test_img_dir) if f.endswith(".h5")])
 
-if len(test_files) == 0:
-    st.sidebar.warning("No data matrices found. Add .h5 files to TestData/img/")
-    selected_file = None
-else:
-    selected_file = st.sidebar.selectbox("Target Observation Tile Patch:", test_files)
-    st.sidebar.success(f"Loaded target matrix item: {selected_file}")
+selected_file = None
+if custom_file_path is None:
+    if len(test_files) == 0:
+        st.sidebar.warning("No data matrices found. Add .h5 files to TestData/img/")
+    else:
+        selected_file = st.sidebar.selectbox("Target Observation Tile Patch:", test_files)
+        st.sidebar.success(f"Loaded target matrix item: {selected_file}")
 
 # Main dashboard logic
-if selected_file:
-    target_absolute_file_path = os.path.join(test_img_dir, selected_file)
+has_input = custom_file_path is not None or selected_file is not None
+if has_input:
+    if custom_file_path is not None:
+        target_absolute_file_path = custom_file_path
+    else:
+        target_absolute_file_path = os.path.join(test_img_dir, selected_file)
 
     # Calculate NDVI (Step 7/8)
     ndvi_matrix = compute_spectral_ndvi(target_absolute_file_path)
@@ -120,5 +137,8 @@ if selected_file:
         disabled=True
     )
 
+    if custom_file_path is not None:
+        os.unlink(custom_file_path)
+
 else:
-    st.info("Please verify data directories placement or select a file item in the sidebar control panel to wake up dashboard operations.")
+    st.info("Upload a custom .h5 file or select a tile from the sidebar to begin.")
