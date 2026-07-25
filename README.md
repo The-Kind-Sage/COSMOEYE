@@ -34,7 +34,13 @@ If you use this project or data framework for academic research or university th
   howpublished\(={\url{https://www.kaggle.com/datasets/tekbahadurkshetri/landslide4sense}} \)}
 ```
 
-### 2. Regional Hazard & Context Credits
+### 2. Multimodal Text-Generation Dataset Source
+* **Dataset Identifier:** Global Landslide Catalog (GLC)
+* **Curator Registry:** Rao, S. (2022). *Global Landslide Catalog: Rainfall-triggered landslide events around the world*. Kaggle Repository.
+* **Direct Archive Link:** [https://kaggle.com](https://kaggle.com)
+* **Primary Academic Source Credit:** Kirschbaum, D. B., Adler, R., Hong, Y., Hill, S., & Lerner-Lam, A. (2010). A global landslide catalog for hazard applications: method, results, and limitations. *Natural Hazards*, 52(3), 561-575.
+
+### 3. Regional Hazard & Context Credits
 Structural constraints, impact indicators, and operational objectives are derived to conform with disaster risk management baselines defined by regional research frameworks in Nepal:
 * **ICIMOD:** International Centre for Integrated Mountain Development, Lalitpur, Nepal. Landslide inventory mapping guidelines and historical hazard data shapefile indices. [ICIMOD Regional Database System](http://icimod.org)
 * **NDRRMA:** National Disaster Risk Reduction and Management Authority, Government of Nepal. [NDRRMA Geo-Portal](https://ndrrma.gov.np)

@@ -5,9 +5,6 @@ numpy
 opencv-python
 albumentations
 
-# --- Natural Language Processing & Local Transformers ---
-transformers
-
 # --- Geospatial Data Processing & Math Utilities ---
 pandas
 scikit-learn
