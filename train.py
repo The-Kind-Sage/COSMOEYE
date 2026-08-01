@@ -63,18 +63,25 @@ class WeightedBCEDiceLoss(nn.Module):
         self.beta = beta
 
     def forward(self, logits, masks, weights):
+        # Label smoothing belongs to the BCE term ONLY. The Dice/Tversky terms
+        # are region-overlap ratios: smoothing gives all ~16k background pixels
+        # a target of 0.025, and at a ~1.5% positive rate that phantom mass
+        # (16138 * 0.025 = 403) outweighs the real positives (246 * 0.975 = 240)
+        # in the cardinality denominator, so the overlap terms were dominated
+        # by background and barely responded to the actual prediction.
+        soft_masks = masks
         if self.label_smoothing > 0.0:
-            masks = masks * (1.0 - self.label_smoothing) + 0.5 * self.label_smoothing
+            soft_masks = masks * (1.0 - self.label_smoothing) + 0.5 * self.label_smoothing
         bce_loss = nn.functional.binary_cross_entropy_with_logits(
             logits,
-            masks,
+            soft_masks,
             weight=weights,
             pos_weight=torch.tensor(self.pos_weight, device=logits.device),
             reduction="mean",
         )
         probs = torch.sigmoid(logits)
         p = probs.view(-1)
-        y = masks.view(-1)
+        y = masks.view(-1)  # hard targets: region terms must stay exact
         w = weights.view(-1)
         intersection = (w * p * y).sum()
         total_cardinality = (w * p).sum() + (w * y).sum()
@@ -385,18 +392,27 @@ class EventGroupedSampler(Sampler):
     """
 
     def __init__(self, groups, group_keys, group_weights, tile_trust,
-                 num_samples, rich_group_mask=None, rich_pool_prob=0.2):
+                 num_samples, rich_group_mask=None, rich_pool_prob=0.2,
+                 seed=0):
         super(EventGroupedSampler, self).__init__()
         self.groups = groups
         self.group_keys = group_keys
         self.group_weights = group_weights
+        # Held by reference: refresh_tile_trust() updates this array in place,
+        # so every epoch re-reads the current self-paced trust with no rebuild.
         self.tile_trust = tile_trust
         self.num_samples = num_samples
         self.rich_group_mask = rich_group_mask
         self.rich_pool_prob = rich_pool_prob
+        # Seeded per epoch: an unseeded default_rng() made every run draw a
+        # different tile order, so two runs of the same code were not
+        # comparable and no change could be attributed to the change itself.
+        self.seed = seed
+        self.epoch = 0
 
     def __iter__(self):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(self.seed + self.epoch)
+        self.epoch += 1
         w = self.group_weights / self.group_weights.sum()
         rich = self.rich_group_mask
         for _ in range(self.num_samples):
@@ -530,7 +546,7 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
     def build_train_loader():
         sampler = EventGroupedSampler(groups, group_keys, group_weights,
                                       tile_trust, num_samples=len(train_indices),
-                                      rich_group_mask=rich_group_mask)
+                                      rich_group_mask=rich_group_mask, seed=0)
         return DataLoader(
             train_dataset,
             batch_size=batch_size,
@@ -568,7 +584,6 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
     )
 
     def refresh_tile_trust():
-        nonlocal train_loader
         model.eval()
         ious = np.zeros(len(train_indices), dtype=np.float64)
         ema_now = ema_state_dict(ema_dict, model)
@@ -590,10 +605,13 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
                 start += n
         model.load_state_dict(saved)
         model.train()
+        # In-place update: the live sampler holds a reference to this array,
+        # so the next epoch picks the new trust up automatically. Rebuilding
+        # the DataLoader here (as before) stranded a full set of
+        # persistent_workers processes every second epoch.
         tile_trust[:] = np.clip(0.4 + 0.6 * ious, 0.05, 1.0)
-        train_loader = build_train_loader()
         print(f"  -> Self-paced trust refresh: mean tile IoU {ious.mean():.3f} | "
-              f"trust mean {tile_trust.mean():.3f} | sampler rebuilt")
+              f"trust mean {tile_trust.mean():.3f}")
 
     model = CustomUNet(in_channels=42, out_channels=1).to(device)
     if use_compile:

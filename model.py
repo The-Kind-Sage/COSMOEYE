@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -102,7 +103,7 @@ class CustomUNet(nn.Module):
     """
 
     def __init__(self, in_channels=42, out_channels=1, base_filters=96,
-                 deep_supervision=True):
+                 deep_supervision=True, prior_prob=0.015):
         super(CustomUNet, self).__init__()
         self.deep_supervision = deep_supervision
         b = base_filters
@@ -140,11 +141,18 @@ class CustomUNet(nn.Module):
         # Spatial attention on the skip connections
         self.skip_att = nn.ModuleList([SpatialAttention() for _ in range(3)])
 
-        # Start predicting background: zero-initialized heads stop the noisy
-        # labels from flooding the first epochs with garbage gradient signal.
+        # Start predicting the BACKGROUND PRIOR (RetinaNet-style bias init).
+        # Zero weight AND zero bias put sigmoid at 0.5 everywhere, i.e. the
+        # model claimed every pixel was 50% landslide at step 0 - the opposite
+        # of the intended "start predicting background". With pos_weight on
+        # top, that produced an enormous, purely destructive first gradient.
+        # Zero weights also make dL/d(decoder) vanish through the heads, so
+        # the entire network below the 1x1 convs got no gradient at all on the
+        # first step. A small random weight plus a prior-logit bias fixes both.
+        prior_bias = float(np.log(prior_prob / (1.0 - prior_prob)))
         for head in (self.final_conv, self.aux_conv2, self.aux_conv3):
-            nn.init.zeros_(head.weight)
-            nn.init.zeros_(head.bias)
+            nn.init.normal_(head.weight, mean=0.0, std=0.01)
+            nn.init.constant_(head.bias, prior_bias)
 
     def forward(self, x, return_aux=False):
         # 1. Encoder pass

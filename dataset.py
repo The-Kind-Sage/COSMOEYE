@@ -9,9 +9,15 @@ from torch.utils.data import Dataset
 NDVI_CHANNEL = 13
 NORM_STATS_PATH = "./datasets/TrainData/norm_stats.npz"
 
-# Stack index of the post-event frame inside the temporal-stack layout
-# (the LAST window always holds the near-event/late state).
-POST_STACK = -1
+# Stack index of the POST-event window inside the temporal-stack layout.
+# convert_sen12.py writes [0] = PRE, [1] = POST, [2] = LATE, so the POST
+# window is index 1 - NOT the last one. The LATE window is a regrowth
+# reference: reading label-trust NDVI from it made every landslide that had
+# revegetated by frame 14 look "still vegetated", which demoted its true
+# positive pixels to weight 0.40 and actively taught the model to ignore
+# them. train.py's inference gate already reads window 1 (channel 27), so
+# this also keeps training and evaluation on the same window.
+POST_STACK = 1
 
 
 def build_or_load_norm_stats(img_dir, sample_size=1500, seed=0):
@@ -170,7 +176,8 @@ class LandslideDataset(Dataset):
 
         # Per-pixel label-trust weights from the raw post-event NDVI band
         if raw_img.ndim == 4:
-            post_ndvi = raw_img[POST_STACK, ..., NDVI_CHANNEL]
+            # Clamp for containers with fewer windows than the standard 3
+            post_ndvi = raw_img[min(POST_STACK, raw_img.shape[0] - 1), ..., NDVI_CHANNEL]
         else:
             post_ndvi = raw_img[..., NDVI_CHANNEL]
         weight_map = compute_label_weights(mask_u8, post_ndvi)
