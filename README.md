@@ -22,7 +22,8 @@ Raw NetCDF tiles (`datasets/s2/`) are converted to standardized temporal-stack h
   - `W2 = POST` (median of post-event frames)
   - `W3 = LATE` (frame 14, regrowth reference)
   - Fallback windows `(0-7), (8-13), (14,14)` for tiles without annotations
-- Per-window 14-band layout: `0-9` = B02..B12, `10` = DEM (clipped 0-8800), `11` = slope (deg), `12` = reserved, `13` = NDVI
+- Per-window 14-band layout: `0-9` = B02..B12, `10` = DEM (clipped 0-8800), `11` = slope (deg), `12` = valid-observation fraction (SCL-derived), `13` = NDVI
+- Observations flagged in Sentinel-2 SCL (cloud, cloud shadow, cirrus, no-data) are excluded from every window median. ~19% of frames are entirely no-data, concentrated in frames 10-13 — i.e. the POST window
 - Flattened to 42 network channels: `[PRE 0-13 | POST 14-27 | LATE 28-41]`
 - Sidecar files in `datasets/TrainData/`:
   - `tile_metadata.json` — annotated flag, event date, annotation id, `pre_post` frame indices for all 13,628 tiles (6,739 annotated)
