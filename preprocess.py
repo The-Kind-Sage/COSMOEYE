@@ -6,10 +6,14 @@ import numpy as np
 def compute_spectral_ndvi(h5_file_path):
     """Load a Landslide4Sense .h5 file and compute the NDVI matrix."""
 
-    # Open file and read image tensor (H, W, Bands)
+    # Open file and read image tensor (H, W, Bands) or change-pair (2, H, W, Bands)
     with h5py.File(h5_file_path, "r") as f:
         # Fixed internal key to match the tekbahadurkshetri/landslide4sense layout
         image = np.array(f["img"])
+
+    # Change-pair containers carry the post-event frame last
+    if image.ndim == 4:
+        image = image[-1]
 
     # Extract Red (B4) and NIR (B8) bands
     red = image[:, :, 3].astype(np.float32)
