@@ -5,38 +5,57 @@ import numpy as np
 import torch
 
 from model import CustomUNet
-from dataset import normalize_standardized_image, stack_temporal_stacks, NORM_STATS_PATH
+from dataset import (normalize_standardized_image, stack_temporal_stacks,
+                     NORM_STATS_PATH, NDVI_CHANNEL, POST_STACK)
 from spatial_math import extract_spatial_metrics
+
+# Number of temporal windows the network expects (PRE / POST / LATE)
+EXPECTED_WINDOWS = 3
+# Must match train.py: the tuned threshold is only valid with the gate applied
+NDVI_GATE_THRESHOLD = 0.48
 
 
 def build_standardized_input(raw_matrix):
     """Convert any supported input layout into the standardized temporal-stack layout.
 
-    - 13 channels (raw Landslide4Sense): bands map 1:1 into channels 0-12,
-      NDVI is computed from band 3 (Red) and band 7 (NIR) into channel 13.
     - 14 channels (legacy single-frame SEN12 tiles): used as-is.
-    - 4D (N, H, W, 14) (temporal-stack tiles): early/mid/late windows, as-is.
+    - 4D (N, H, W, 14) (temporal-stack tiles): PRE/POST/LATE windows, as-is.
     Single-frame inputs become a one-window container so the temporal
     network can still score them.
     """
     if raw_matrix.ndim == 4:
-        return raw_matrix.astype(np.float32)
+        return _fit_window_count(raw_matrix.astype(np.float32))
 
     height, width, channels = raw_matrix.shape
 
-    if channels == 13:
-        fused_matrix = np.zeros((height, width, 14), dtype=np.float32)
-        fused_matrix[:, :, :13] = raw_matrix
-        red = raw_matrix[:, :, 3]
-        nir = raw_matrix[:, :, 7]
-        computed_ndvi = (nir - red) / (nir + red + 1e-8)
-        fused_matrix[:, :, 13] = computed_ndvi
-    elif channels == 14:
+    if channels == 14:
         fused_matrix = raw_matrix
     else:
-        raise ValueError(f"Unsupported channel count: {channels} (expected 13, 14 or a temporal stack)")
+        raise ValueError(f"Unsupported channel count: {channels} (expected 14 or a temporal stack)")
 
-    return fused_matrix[None]
+    return _fit_window_count(fused_matrix[None])
+
+
+def _fit_window_count(stacks):
+    """Force the container to the EXPECTED_WINDOWS the network was built for.
+
+    The network takes 3 windows x 14 bands = 42 channels. A single-frame
+    input produces a 1-window container (14 channels), which used to reach
+    the model and raise a shape error that the __main__ demo swallowed in a
+    bare except - so the legacy path looked like it worked and never did.
+    Repeating the only available frame across PRE/POST/LATE yields a valid
+    42-channel input with a flat (zero) temporal change signal, which is the
+    honest representation of a single acquisition.
+    """
+    n_windows = stacks.shape[0]
+    if n_windows == EXPECTED_WINDOWS:
+        return stacks
+    if n_windows == 1:
+        return np.repeat(stacks, EXPECTED_WINDOWS, axis=0)
+    if n_windows > EXPECTED_WINDOWS:
+        return stacks[:EXPECTED_WINDOWS]
+    pad = np.repeat(stacks[-1:], EXPECTED_WINDOWS - n_windows, axis=0)
+    return np.concatenate([stacks, pad], axis=0)
 
 
 def load_normalization_stats():
@@ -89,17 +108,36 @@ def execute_vision_inference_pass(sample_file_name, csv_path="local_highways.csv
     ).unsqueeze(0).to(device)
 
     unet_model = CustomUNet(in_channels=42, out_channels=1)
-    unet_model.load_state_dict(torch.load(vision_weights, map_location=device))
+    unet_model.load_state_dict(
+        torch.load(vision_weights, map_location=device, weights_only=True)
+    )
     unet_model.to(device).eval()
 
     probability_mask = tta_probabilities(unet_model, image_tensor, device).squeeze().cpu().numpy()
 
     # Use the IoU-tuned threshold saved during training (falls back to 0.5)
     threshold = 0.5
+    gate_enabled = True
+    gate_threshold = NDVI_GATE_THRESHOLD
     threshold_path = "landslide_best_threshold.json"
     if os.path.exists(threshold_path):
         with open(threshold_path, "r") as jf:
-            threshold = json.load(jf).get("threshold", 0.5)
+            saved = json.load(jf)
+        threshold = saved.get("threshold", 0.5)
+        gate_enabled = saved.get("ndvi_gate", True)
+        gate_threshold = saved.get("ndvi_gate_threshold", NDVI_GATE_THRESHOLD)
+
+    # CRITICAL: the saved threshold is tuned on NDVI-GATED probabilities.
+    # Applying it to ungated output (as this did before) evaluates a
+    # different operating point than the one that was validated, and admits
+    # exactly the cloud/water/regrowth false positives the gate exists to
+    # remove. Read NDVI from the raw POST window, before normalization, so it
+    # is already in physical units.
+    if gate_enabled:
+        post_idx = min(POST_STACK, fused_matrix.shape[0] - 1)
+        raw_post_ndvi = fused_matrix[post_idx, :, :, NDVI_CHANNEL]
+        probability_mask = probability_mask * (raw_post_ndvi < gate_threshold)
+
     binary_mask = (probability_mask > threshold).astype(np.uint8)
 
     spatial_metrics = extract_spatial_metrics(binary_mask, csv_path=csv_path)
@@ -123,5 +161,12 @@ if __name__ == "__main__":
 
     try:
         execute_vision_inference_pass(mock_test_file)
-    except Exception as e:
-        print(f"System status check complete. Core validation track: {str(e)}")
+    except FileNotFoundError as e:
+        # The only expected failure when no model has been trained yet.
+        print(f"Skipped: {e}")
+    except Exception:
+        # Anything else is a real defect. The previous bare except printed
+        # "System status check complete" for every error, which is how the
+        # broken single-frame path stayed hidden.
+        print("Inference self-check FAILED:")
+        raise

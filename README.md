@@ -90,7 +90,6 @@ Loads `landslide_unet_weights.pth`, normalizes with cached stats, applies the tu
 
 - `convert_sen12.py` — raw .nc -> temporal-stack h5 conversion; builds `tile_metadata.json`
 - `geo_lookup.py` — UTM tile coordinates -> WGS84 (pure math, no pyproj) with Google Maps links; exports `datasets/TrainData/tile_coordinates.csv`
-- `test_single` — single-tile .nc inspection script
 
 ---
 

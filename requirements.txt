@@ -15,11 +15,10 @@ tqdm==4.68.3
 opencv-python==4.13.0.92
 albumentations==2.0.8
 
-# --- Optional / Legacy (app.py, spatial_math.py, generate_reports.py) ---
+# --- Optional / Legacy (spatial_math.py, generate_reports.py) ---
 scipy==1.18.0
 pandas==3.0.3
 scikit-learn==1.9.0
 matplotlib==3.11.0
-# streamlit     # required only by app.py (legacy viewer)
 # xarray        # not used by the current pipeline; only needed for HDF5 via xarray
 # h5netcdf      # backend for xarray, not used by the current pipeline

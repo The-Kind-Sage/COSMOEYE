@@ -189,6 +189,22 @@ def ema_state_dict(ema_dict, model):
     return state
 
 
+def export_state_dict(state):
+    """Strip torch.compile's '_orig_mod.' prefix before writing a checkpoint.
+
+    torch.compile returns a wrapper module, so state_dict() keys come out as
+    '_orig_mod.<name>'. Saving those verbatim yields a checkpoint that
+    predict.py - which builds a plain CustomUNet - can never load. Stripping
+    at save time keeps the on-disk format identical whether or not compile
+    was active.
+    """
+    prefix = "_orig_mod."
+    return {
+        (key[len(prefix):] if key.startswith(prefix) else key): val
+        for key, val in state.items()
+    }
+
+
 # Window 1 (POST) NDVI inside the flattened 42-channel layout:
 # [PRE 0-13 | POST 14-27 | LATE 28-41], NDVI is band 13 of each window.
 NDVI_POST_CHANNEL = 27
@@ -275,17 +291,26 @@ def evaluate_dataset(model, dataloader, criterion, device, thresholds=None,
                 gate = (raw_ndvi < NDVI_GATE_THRESHOLD).float()
             probs_g = probs * gate if gate is not None else probs
 
-            for i, thr in enumerate(thresholds):
-                pred = (probs > thr).float()
-                pred_g = (probs_g > thr).float()
-                tp[i] += torch.sum(pred_g * target).item()
-                fp[i] += torch.sum(pred_g * (1.0 - target)).item()
-                fn[i] += torch.sum((1.0 - pred_g) * target).item()
-                tn[i] += torch.sum((1.0 - pred_g) * (1.0 - target)).item()
-                tp_r[i] += torch.sum(pred * target).item()
-                fp_r[i] += torch.sum(pred * (1.0 - target)).item()
-                fn_r[i] += torch.sum((1.0 - pred) * target).item()
-                tn_r[i] += torch.sum((1.0 - pred) * (1.0 - target)).item()
+            # Vectorized threshold sweep. The previous per-threshold Python
+            # loop issued 8 blocking .item() syncs per threshold - 784 GPU
+            # stalls per batch on the final 0.01 grid - which dominated the
+            # whole evaluation. One (T, N) comparison per map replaces that
+            # with 2 transfers, and the arithmetic is identical.
+            thr_t = torch.as_tensor(thresholds, device=probs.device,
+                                    dtype=probs.dtype).view(-1, 1)
+            target_flat = target.reshape(1, -1) > 0.5
+            n_pix = target_flat.numel()
+            n_pos = int(target_flat.sum().item())
+            for prob_map, acc in ((probs_g, (tp, fp, fn, tn)),
+                                  (probs, (tp_r, fp_r, fn_r, tn_r))):
+                pred = prob_map.reshape(1, -1) > thr_t       # (T, N) bool
+                tp_np = (pred & target_flat).sum(dim=1).cpu().numpy()
+                pred_pos_np = pred.sum(dim=1).cpu().numpy()
+                fn_np = n_pos - tp_np
+                acc[0] += tp_np
+                acc[1] += pred_pos_np - tp_np
+                acc[2] += fn_np
+                acc[3] += n_pix - pred_pos_np - fn_np
 
     metrics = confusion_to_metrics(tp, fp, fn, tn, thresholds, min_recall)
     raw = confusion_to_metrics(tp_r, fp_r, fn_r, tn_r, thresholds, min_recall)
@@ -737,7 +762,7 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
         # Save the checkpoint only when validation IoU improves
         if ema_metrics["iou"] > best_ema_iou:
             best_ema_iou = ema_metrics["iou"]
-            torch.save(ema_state, weights_output_path)
+            torch.save(export_state_dict(ema_state), weights_output_path)
             with open(threshold_output_path, "w") as jf:
                 json.dump({"threshold": ema_metrics["threshold"]}, jf)
             print(f"  -> New best validation IoU ({best_ema_iou * 100:.1f}%). Weights + threshold saved.")
@@ -771,7 +796,7 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
                                        ndvi_std=ndvi_std)
         if swa_metrics["iou"] > best_ema_iou:
             best_ema_iou = swa_metrics["iou"]
-            torch.save(swa_state, weights_output_path)
+            torch.save(export_state_dict(swa_state), weights_output_path)
             with open(threshold_output_path, "w") as jf:
                 json.dump({"threshold": swa_metrics["threshold"]}, jf)
             print(f"  -> SWA averaged {len(swa_snapshots)} snapshots: IoU {swa_metrics['iou'] * 100:.1f}% "
@@ -780,13 +805,26 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
     # Re-evaluate the best checkpoint for the final summary: finer 0.01
     # threshold grid + 12-view multi-scale TTA + NDVI gate.
     if os.path.exists(weights_output_path):
-        model.load_state_dict(torch.load(weights_output_path, map_location=device))
+        # Checkpoints are saved unprefixed; load into the real module so this
+        # works whether or not torch.compile wrapped the model.
+        getattr(model, "_orig_mod", model).load_state_dict(
+            torch.load(weights_output_path, map_location=device)
+        )
     final_metrics = evaluate_dataset(
         model, val_loader, criterion, device,
         thresholds=np.arange(0.01, 0.99, 0.01),
         scales=(0.9, 1.0, 1.1),
         ndvi_gate=True, ndvi_mean=ndvi_mean, ndvi_std=ndvi_std,
     )
+
+    # Persist the threshold that belongs to the numbers printed below. The
+    # per-epoch value written earlier was tuned on 2-view TTA and a coarse
+    # 0.02 grid; predict.py then applied it to a different TTA setting. The
+    # operating point must come from the same evaluation that is reported.
+    with open(threshold_output_path, "w") as jf:
+        json.dump({"threshold": final_metrics["threshold"],
+                   "ndvi_gate": True,
+                   "ndvi_gate_threshold": NDVI_GATE_THRESHOLD}, jf)
 
     file_size_mb = os.path.getsize(weights_output_path) / (1024 * 1024) if os.path.exists(weights_output_path) else 0.0
 
