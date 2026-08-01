@@ -1,6 +1,7 @@
 import os
 import gzip
 import tempfile
+import warnings
 import h5py
 import numpy as np
 from netCDF4 import Dataset
@@ -11,6 +12,21 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 # B02..B08, B8A, B11, B12, SCL, MASK, DEM  (15 time steps each for bands)
 BAND_VARS = ["B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B11", "B12"]
 DEM_VAR = "DEM"
+SCL_VAR = "SCL"
+# Sentinel-2 Scene Classification classes that are NOT usable observations:
+# 3 = cloud shadow, 8/9 = cloud medium/high probability, 10 = thin cirrus,
+# 255 = no data. Measured across the local archive: ~19% of all frames are
+# entirely no-data (frames 10-13 are flagged 57/83/38/17% of the time), and
+# those frames are the POST window. They carry plausible-looking reflectance
+# (mean 617 vs 503 for valid pixels), so no value-based check can spot them -
+# only SCL marks them. Feeding them to np.nanmedian pulled the POST composite,
+# the NDVI gate and the label-trust weights toward garbage.
+SCL_INVALID = (3, 8, 9, 10, 255)
+# Channel 12 was previously written as a constant zero ("reserved"), i.e. 3 of
+# the network's 42 input channels carried no information at all. It now holds
+# the per-pixel fraction of frames in the window that were valid observations,
+# which tells the model how much to trust each pixel of the composite.
+VALIDITY_CHANNEL = 12
 # Temporal formulation: three robust temporal windows per tile, each the
 # median of its frames (median = cloud-resistant). Annotated tiles carry
 # per-tile event metadata (pre_post_dates = acquisition frame indices that
@@ -47,8 +63,12 @@ def resolve_windows(annotated, pre_post):
     """Return the three (f0, f1) frame windows for a tile."""
     if annotated and pre_post is not None:
         pre, post = pre_post
-        pre = max(0, min(pre, 14))
-        post = max(0, min(post, 14))
+        # Clamp to 13, not 14: post=14 would make the POST window slice(14, 14),
+        # which is EMPTY, and an empty nanmedian silently zeroes all 14 channels
+        # of that window. Observed post values are 6..9, so this never fires on
+        # the current archive - it is a guard, not a live fix.
+        pre = max(0, min(pre, 13))
+        post = max(0, min(post, 13))
         return [(0, pre), (post, 13), (14, 14)]
     return FALLBACK_WINDOWS
 
@@ -70,7 +90,9 @@ def convert_one_file(full_path, img_out_dir, mask_out_dir):
       [1] = POST window stack (median of post-event frames, per-tile aligned)
       [2] = LATE window stack (frame 14, regrowth reference)
     Channels: 0-9 spectral bands (B02..B12), 10 = DEM, 11 = slope (deg),
-              12 = reserved, 13 = NDVI (per stack).
+              12 = valid-observation fraction (SCL-derived), 13 = NDVI.
+    Observations flagged in SCL (cloud, shadow, cirrus, no-data) are excluded
+    from every window median.
     Returns (file_name, ok, error, metadata_dict).
     """
     file_name = os.path.basename(full_path)
@@ -103,12 +125,22 @@ def convert_one_file(full_path, img_out_dir, mask_out_dir):
         }
         windows = resolve_windows(metadata["annotated"], metadata["pre_post"])
 
-        # 2. Read all spectral bands across all 15 frames
+        # 2. Read all spectral bands across all 15 frames, marking unusable
+        #    observations as NaN. The median below is already written as
+        #    np.nanmedian with an np.isfinite guard - it was built to skip bad
+        #    observations, it just never received any NaN to skip, because the
+        #    only record of invalidity lives in SCL.
+        scl = np.array(src.variables[SCL_VAR][:])
+        invalid = np.isin(scl, SCL_INVALID)
+
         band_series = {}
         for band_var in BAND_VARS:
-            band_series[band_var] = np.array(
-                src.variables[band_var][:], dtype=np.float32
-            )
+            arr = np.array(src.variables[band_var][:], dtype=np.float32)
+            arr[invalid] = np.nan
+            band_series[band_var] = arr
+
+        # Per-frame validity, averaged per window into the validity channel
+        valid_frames = (~invalid).astype(np.float32)
 
         # 3. Build the standardized temporal-stack layout matrix
         n_stacks = len(windows)
@@ -116,10 +148,20 @@ def convert_one_file(full_path, img_out_dir, mask_out_dir):
         for stack_idx, (f0, f1) in enumerate(windows):
             frame_slice = slice(f0, f1 + 1)
             for channel_idx, band_var in enumerate(BAND_VARS):
-                stacked = np.nanmedian(band_series[band_var][frame_slice], axis=0)
+                # A pixel invalid in EVERY frame of the window yields an
+                # all-NaN slice: nanmedian returns NaN (with a RuntimeWarning
+                # that would otherwise spam 13k times) and the isfinite guard
+                # falls back to 0.0 = "no information" after z-scoring.
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", RuntimeWarning)
+                    stacked = np.nanmedian(band_series[band_var][frame_slice], axis=0)
                 standardized[stack_idx, :, :, channel_idx] = np.where(
                     np.isfinite(stacked), stacked, 0.0
                 )
+            window_valid = valid_frames[frame_slice]
+            standardized[stack_idx, :, :, VALIDITY_CHANNEL] = (
+                window_valid.mean(axis=0) if window_valid.shape[0] else 0.0
+            )
 
         # 4. Static terrain layers (identical in every stack)
         dem = np.array(src.variables[DEM_VAR][-1, :, :], dtype=np.float32)
