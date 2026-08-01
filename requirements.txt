@@ -1,21 +1,25 @@
-# --- Core Deep Learning & Computer Vision ---
-torch
-torchvision
-numpy
-opencv-python
-albumentations
+# --- Core Deep Learning (train.py, model.py, predict.py) ---
+# NOTE: torch must come from the PyTorch CUDA index, not plain PyPI:
+#   pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.pytorch.org/whl/cu132
+torch==2.13.0+cu132
+torchvision==0.28.0+cu132
+numpy==2.5.0
 
-# --- Geospatial Data Processing & Math Utilities ---
-pandas
-scikit-learn
+# --- Data I/O (dataset.py, convert_sen12.py, geo_lookup.py) ---
+h5py==3.16.0
+netCDF4==1.7.4
+tqdm==4.68.3
 
-# --- HDF5 Data Handling ---
-h5py
+# --- Image Processing & Augmentation (dataset.py, augmentations.py) ---
+# cv2 is imported directly in dataset.py (boundary ring weighting)
+opencv-python==4.13.0.92
+albumentations==2.0.8
 
-
-# --- Core Data Processing ---
-xarray          # Multi-dimensional array handling for .h5 files
-h5netcdf        # Backend driver needed by xarray to read HDF5 format
-
-# --- Visualization & Tooling ---
-matplotlib      # Required by VS Code 'Scientific Data Viewer' extension
+# --- Optional / Legacy (app.py, spatial_math.py, generate_reports.py) ---
+scipy==1.18.0
+pandas==3.0.3
+scikit-learn==1.9.0
+matplotlib==3.11.0
+# streamlit     # required only by app.py (legacy viewer)
+# xarray        # not used by the current pipeline; only needed for HDF5 via xarray
+# h5netcdf      # backend for xarray, not used by the current pipeline
