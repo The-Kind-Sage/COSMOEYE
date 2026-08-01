@@ -24,6 +24,11 @@ __pycache__/
 
 # --- Ignore Heavy Model Weights ---
 local_models/t5_weights/*.safetensors
+*.pth
+
+# --- Ignore Per-Run Training Artifacts ---
+train_history.csv
+landslide_best_threshold.json
 
 # --- Ignore Operating System Artifacts ---
 .DS_Store
