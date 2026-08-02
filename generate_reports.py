@@ -6,16 +6,50 @@ from generate_prompt import compile_nlp_input_vector
 
 def _rule_based_bulletin(structured_prompt_string):
     """Build bulletin from structured prompt without T5."""
-    parts = {k.split("=")[0]: k.split("=")[1] for k in structured_prompt_string.replace("INPUT_VEC: ", "").strip(";").split("; ")}
+    parts = {}
+    for token in structured_prompt_string.replace("INPUT_VEC: ", "").strip(";").split("; "):
+        if "=" in token:
+            key, _, val = token.partition("=")
+            parts[key.strip()] = val.strip()
+
     if parts.get("Anomaly") == "None":
-        return f"CRITICAL INCIDENT BRIEF: Disaster risk parameters are currently within normal baseline thresholds across {parts['District']} District. Satellite imagery reveals no active slope displacement anomalies. Transport corridors remain fully operational."
-    return (
+        return (
+            f"CRITICAL INCIDENT BRIEF: Disaster risk parameters are currently within "
+            f"normal baseline thresholds across {parts.get('District', 'Unknown')} District. "
+            f"Satellite imagery reveals no active slope displacement anomalies. "
+            f"Transport corridors remain fully operational."
+        )
+
+    district = parts.get("District", "Unknown")
+    area = parts.get("Area", "unknown area")
+    centroid = parts.get("Centroid", "unknown")
+    nearest_road = parts.get("Nearest_Road", "Unknown")
+    blocked = parts.get("Blocked", "No")
+
+    bulletin = (
         f"CRITICAL DISASTER BULLETIN - GOVERNMENT OF NEPAL (NDRRMA PROTOCOL)\n"
-        f"Location Focus: {parts['District']} District, Nepal\n"
-        f"Satellite observation metrics reveal an extreme mass-wasting event covering approximately {parts['Area']} of land surface slope, "
-        f"centred on tile grid position {parts.get('Centroid', 'unknown')}. "
-        f"Local disaster coordinate teams are advised to deploy immediate response units to this sector."
+        f"Location Focus: {district} District, Nepal\n"
+        f"Satellite observation metrics reveal an extreme mass-wasting event covering "
+        f"approximately {area} of land surface slope, "
+        f"centred on tile grid position {centroid}. "
+        f"Local disaster coordinate teams are advised to deploy immediate response "
+        f"units to this sector."
     )
+
+    # Road blockage sentence — appended only when the model flagged a blockage.
+    if blocked == "Yes":
+        bulletin += (
+            f"\nROAD BLOCKAGE ALERT: {nearest_road} is potentially obstructed by "
+            f"the detected landslide deposit. Access route verification and emergency "
+            f"detour planning are strongly recommended before dispatching field teams."
+        )
+    else:
+        bulletin += (
+            f"\nNearest transport corridor: {nearest_road} — no blockage detected "
+            f"within the current proximity threshold."
+        )
+
+    return bulletin
 
 
 def execute_offline_report_generator(structured_prompt_string, output_txt_path="emergency_bulletin.txt"):
@@ -83,8 +117,13 @@ if __name__ == "__main__":
         "surface_area_sqm": 2500,
     }]
 
-    # Build prompt (Step 17)
-    prompt_string = compile_nlp_input_vector(simulated_metadata, default_district="Sindhupalchok")
+    # Build prompt (Step 17) — include road blockage flags
+    prompt_string = compile_nlp_input_vector(
+        simulated_metadata,
+        default_district="Sindhupalchok",
+        nearest_road="Araniko Highway",
+        road_blocked=True,
+    )
     print(f"Compiled Input Data Vector Stream: {prompt_string}")
 
     # Run generation
