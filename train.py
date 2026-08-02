@@ -287,9 +287,20 @@ def evaluate_dataset(model, dataloader, criterion, device, thresholds=None,
 
             gate = None
             if ndvi_gate and ndvi_mean is not None and ndvi_std is not None:
-                raw_ndvi = images[:, NDVI_POST_CHANNEL] * ndvi_std + ndvi_mean
+                # Slice as a RANGE to keep the channel dimension. Indexing with
+                # a bare int gives (B, H, W), and multiplying that against the
+                # (B, 1, H, W) probability map broadcasts to (B, B, H, W) -
+                # every image gated by every other image's NDVI. That silently
+                # corrupted every gated metric before it started crashing here.
+                raw_ndvi = (images[:, NDVI_POST_CHANNEL:NDVI_POST_CHANNEL + 1]
+                            * ndvi_std + ndvi_mean)
                 gate = (raw_ndvi < NDVI_GATE_THRESHOLD).float()
             probs_g = probs * gate if gate is not None else probs
+            if probs_g.shape != probs.shape:
+                raise RuntimeError(
+                    f"NDVI gate broadcast the probability map: {probs.shape} -> "
+                    f"{probs_g.shape}. Gate and probs must share a shape."
+                )
 
             # Vectorized threshold sweep. The previous per-threshold Python
             # loop issued 8 blocking .item() syncs per threshold - 784 GPU
@@ -301,16 +312,20 @@ def evaluate_dataset(model, dataloader, criterion, device, thresholds=None,
             target_flat = target.reshape(1, -1) > 0.5
             n_pix = target_flat.numel()
             n_pos = int(target_flat.sum().item())
-            for prob_map, acc in ((probs_g, (tp, fp, fn, tn)),
-                                  (probs, (tp_r, fp_r, fn_r, tn_r))):
+            # Accumulators are unpacked into names: `acc[0] += x` on a tuple is
+            # item assignment and raises TypeError, even though the element is
+            # a mutable ndarray. `a_tp += x` mutates the array in place.
+            for prob_map, (a_tp, a_fp, a_fn, a_tn) in (
+                    (probs_g, (tp, fp, fn, tn)),
+                    (probs, (tp_r, fp_r, fn_r, tn_r))):
                 pred = prob_map.reshape(1, -1) > thr_t       # (T, N) bool
                 tp_np = (pred & target_flat).sum(dim=1).cpu().numpy()
                 pred_pos_np = pred.sum(dim=1).cpu().numpy()
                 fn_np = n_pos - tp_np
-                acc[0] += tp_np
-                acc[1] += pred_pos_np - tp_np
-                acc[2] += fn_np
-                acc[3] += n_pix - pred_pos_np - fn_np
+                a_tp += tp_np
+                a_fp += pred_pos_np - tp_np
+                a_fn += fn_np
+                a_tn += n_pix - pred_pos_np - fn_np
 
     metrics = confusion_to_metrics(tp, fp, fn, tn, thresholds, min_recall)
     raw = confusion_to_metrics(tp_r, fp_r, fn_r, tn_r, thresholds, min_recall)
@@ -457,7 +472,8 @@ class EventGroupedSampler(Sampler):
 
 
 def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
-                   use_compile=True, val_fraction=0.1):
+                   use_compile=True, val_fraction=0.1, loader_workers=2,
+                   refine_threshold=None):
     """Executes training with a held-out validation split and real metrics."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -474,12 +490,19 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
     train_img_dir = "./datasets/TrainData/img/"
     train_mask_dir = "./datasets/TrainData/mask/"
 
-    # Force delete existing weights file to guarantee an absolute fresh training initialize pass
+    # Start from a genuinely fresh checkpoint, but ARCHIVE rather than delete.
+    # A hard delete means any crash mid-run destroys the previous run's best
+    # weights along with the current one, leaving nothing to fall back on.
     weights_output_path = "landslide_unet_weights.pth"
     threshold_output_path = "landslide_best_threshold.json"
     for stale in (weights_output_path, threshold_output_path):
         if os.path.exists(stale):
-            os.remove(stale)
+            base, ext = os.path.splitext(stale)
+            previous = f"{base}.prev{ext}"
+            if os.path.exists(previous):
+                os.remove(previous)
+            os.replace(stale, previous)
+            print(f"Archived previous {stale} -> {previous}")
 
     start_time = time.time()
     if device.type == "cuda":
@@ -520,11 +543,13 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
 
     train_dataset = Subset(
         LandslideDataset(img_dir=train_img_dir, mask_dir=train_mask_dir,
-                         augmentations=transforms),
+                         augmentations=transforms,
+                         refine_threshold=refine_threshold),
         train_indices,
     )
     val_dataset = Subset(
-        LandslideDataset(img_dir=train_img_dir, mask_dir=train_mask_dir),
+        LandslideDataset(img_dir=train_img_dir, mask_dir=train_mask_dir,
+                         refine_threshold=None),
         val_indices,
     )
 
@@ -568,6 +593,29 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
 
     tile_trust = np.ones(len(train_indices), dtype=np.float64)
 
+    # Worker budget. On Windows, DataLoader workers are SPAWNED, so each one is
+    # a fresh process that re-imports torch and reserves GB-scale commit charge
+    # for the CUDA DLLs before it loads a single tile. The old layout ran three
+    # loaders at 4 persistent workers each = 12 such processes, which exhausted
+    # the system commit limit mid-run ("[WinError 1455] The paging file is too
+    # small"). Windows does auto-grow the pagefile, but far slower than 12 torch
+    # processes allocate, so the burst wins the race.
+    #   train : `loader_workers`, persistent (hot path, needs the throughput)
+    #   val   : 0 - runs in the main process; it is only ~1.4k tiles and the
+    #           wall time is dominated by multi-view TTA on the GPU anyway
+    #   trust : `loader_workers`, NOT persistent, so the processes are released
+    #           between refreshes instead of idling for the whole run
+    # Peak concurrent workers: 2 * loader_workers, versus 12 before.
+    def loader_kwargs(n_workers, persistent):
+        if n_workers <= 0:
+            # persistent_workers/prefetch_factor are invalid when workers == 0
+            return {"num_workers": 0}
+        return {"num_workers": n_workers,
+                "persistent_workers": persistent,
+                "prefetch_factor": 2}
+
+    pin = device.type == "cuda"
+
     def build_train_loader():
         sampler = EventGroupedSampler(groups, group_keys, group_weights,
                                       tile_trust, num_samples=len(train_indices),
@@ -577,10 +625,8 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
             batch_size=batch_size,
             sampler=sampler,
             drop_last=True,
-            num_workers=4,
-            persistent_workers=True,
-            prefetch_factor=2,
-            pin_memory=True if device.type == "cuda" else False,
+            pin_memory=pin,
+            **loader_kwargs(loader_workers, persistent=True),
         )
 
     train_loader = build_train_loader()
@@ -588,24 +634,26 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
         val_dataset,
         batch_size=max(16, 2 * batch_size),
         shuffle=False,
-        num_workers=4,
-        persistent_workers=True,
-        prefetch_factor=2,
-        pin_memory=True if device.type == "cuda" else False,
+        pin_memory=pin,
+        **loader_kwargs(0, persistent=False),
     )
 
     # Self-paced label-trust refresh: every 2 epochs the EMA model scores all
     # training tiles; tiles where it confidently agrees with the (noisy)
     # label keep full sampling weight, tiles it rejects get down-weighted so
     # training capacity is spent on clean signal.
+    # 0 workers, deliberately. The trust refresh is the ONLY moment when two
+    # loaders are live at once: the train loader's persistent workers idle
+    # while this one spawns its own. Measured on this machine, each spawned
+    # torch worker costs ~1.9 GB of commit, and that overlap drove headroom to
+    # 0.4 GB even at --workers 2. Scoring in the main process removes the
+    # spike entirely; it costs wall time, not stability.
     trust_loader = DataLoader(
         Subset(full_dataset, train_indices),
-        batch_size=batch_size,
+        batch_size=max(32, 2 * batch_size),
         shuffle=False,
-        num_workers=4,
-        persistent_workers=True,
-        prefetch_factor=2,
-        pin_memory=True if device.type == "cuda" else False,
+        pin_memory=pin,
+        **loader_kwargs(0, persistent=False),
     )
 
     def refresh_tile_trust():
@@ -680,6 +728,8 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
     print(f"Total Optimization Steps per Epoch     : {len(train_loader)}")
     print(f"Loss: BCE(pos_w {criterion.pos_weight}) + Dice(1.5) + 0.4x DeepSup + 0.3x Tversky | Smoothing 0.05 | Noise weights ON")
     print(f"NDVI gate: ON (suppress predictions on vegetated post-event pixels)")
+    print(f"DataLoader workers: {loader_workers} train (persistent) + 0 val + 0 trust "
+          f"| peak {loader_workers} spawned processes (~1.9 GB commit each)")
     print(f"Target Accelerated Hardware Device Node: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}")
     print("=========================================================================\n")
 
@@ -879,7 +929,19 @@ if __name__ == "__main__":
     parser.add_argument("--pos-weight", type=float, default=6.0)
     parser.add_argument("--no-compile", action="store_true",
                         help="disable torch.compile (fallback: eager mode)")
+    parser.add_argument("--refine-threshold", type=float, default=None,
+                        help="label refinement: strip mask positives whose "
+                             "POST-window NDVI >= this value (e.g. 0.48). "
+                             "Applied to TRAIN masks only; validation stays "
+                             "on the raw labels for honest evaluation.")
+    parser.add_argument("--workers", type=int, default=2,
+                        help="DataLoader worker processes (default 2). Each one "
+                             "re-imports torch and reserves GB-scale commit on "
+                             "Windows; raise only if you have commit headroom, "
+                             "use 0 to load entirely in the main process.")
     args = parser.parse_args()
     epochs = args.epochs_flag if args.epochs_flag is not None else (args.epochs or 20)
     train_pipeline(epochs=epochs, batch_size=args.batch, lr=args.lr,
-                   pos_weight=args.pos_weight, use_compile=not args.no_compile)
+                   pos_weight=args.pos_weight, use_compile=not args.no_compile,
+                   refine_threshold=args.refine_threshold,
+                   loader_workers=args.workers)
