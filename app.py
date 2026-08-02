@@ -4,6 +4,9 @@ import h5py
 import numpy as np
 import streamlit as st
 
+# Add src/ to path so all library modules are importable
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+
 # Devanagari needs a UTF-8 console/output channel
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -14,6 +17,7 @@ from predict import (execute_vision_inference_pass, resolve_image_path,
                      get_post_rgb, save_insight_panels,
                      PIXEL_AREA_SQM, INSIGHT_SCHEMA_VERSION)
 from dataset import NDVI_CHANNEL, POST_STACK
+from paths import PATHS
 
 
 @st.cache_data(show_spinner="Analyzing tile...", ttl=3600)
@@ -67,7 +71,7 @@ st.divider()
 @st.cache_data(ttl=300)
 def list_real_tiles():
     """All real h5 tiles available in TestData/img (and TrainData if any)."""
-    dirs = ["./datasets/TestData/img/", "./datasets/TrainData/img/"]
+    dirs = [str(PATHS.TEST_IMG_DIR), str(PATHS.TRAIN_IMG_DIR)]
     tiles = []
     for d in dirs:
         if os.path.isdir(d):
@@ -156,8 +160,8 @@ with st.sidebar:
     if uploaded is not None:
         # Stage uploads into TestData/img so the inference path resolution
         # (TestData then TrainData) can find them by name.
-        os.makedirs("./datasets/TestData/img/", exist_ok=True)
-        custom_path = os.path.join("./datasets/TestData/img/", uploaded.name)
+        os.makedirs(PATHS.TEST_IMG_DIR, exist_ok=True)
+        custom_path = os.path.join(PATHS.TEST_IMG_DIR, uploaded.name)
         with open(custom_path, "wb") as fh:
             fh.write(uploaded.read())
 
@@ -168,7 +172,7 @@ target_name = uploaded.name if uploaded is not None else (selection or "dummy_te
 # ---------------------------------------------------------------- main panel
 if run_btn:
     try:
-        weights_mtime = os.path.getmtime("landslide_unet_weights.pth")
+        weights_mtime = os.path.getmtime(PATHS.WEIGHTS)
         img_mtime = os.path.getmtime(resolve_image_path(target_name))
         # spatial_metrics is still produced by the inference pass, but the
         # dashboard no longer renders it as a table.
