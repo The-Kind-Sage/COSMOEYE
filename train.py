@@ -865,15 +865,6 @@ def train_pipeline(epochs=20, batch_size=16, lr=2e-4, pos_weight=6.0,
                 f"{best_ema_iou:.4f}",
             ])
 
-        # Guaranteed per-epoch checkpoint: a .pth is written for EVERY epoch
-        # (even if validation IoU never improves, e.g. a 1-epoch run), so each
-        # run directory always ends up with a loadable weights file next to
-        # the history CSV.
-        torch.save(export_state_dict(ema_state),
-                   os.path.join(run_dir, f"checkpoint_epoch{epoch + 1:02d}.pth"))
-        print(f"  -> Saved per-epoch checkpoint "
-              f"checkpoint_epoch{epoch + 1:02d}.pth (run dir).")
-
         # Early stopping. The 20-epoch run peaked at epoch 1 and then spent 19
         # epochs getting worse; there is no reason to keep burning hours once
         # validation has clearly stopped improving.
@@ -910,8 +901,8 @@ def train_pipeline(epochs=20, batch_size=16, lr=2e-4, pos_weight=6.0,
                   f"-> saved as final weights (beats best EMA checkpoint).")
 
     # Single-epoch / never-improved runs: the canonical weights file is only
-    # written when validation IoU improves. Guarantee a .pth ALWAYS exists at
-    # the model path so even a 1-epoch training run ends with a usable
+    # written when validation IoU improves. Guarantee ONE .pth ALWAYS exists
+    # at the model path so even a 1-epoch training run ends with a usable
     # checkpoint (alongside the history CSV) for predict.py / app.py.
     if not os.path.exists(weights_output_path) and swa_snapshots:
         torch.save(export_state_dict(swa_state), weights_output_path)
