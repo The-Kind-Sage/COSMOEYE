@@ -1,4 +1,9 @@
 import os
+import sys
+
+# Add src/ to the import path so all library modules are importable from root
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+
 import json
 import time
 import csv
@@ -15,10 +20,10 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, Sampler, Subset
 
-# Import your custom modules directly from your workspace folder
 from model import CustomUNet
 from dataset import LandslideDataset, NDVI_CHANNEL
 from augmentations import get_training_augmentations
+from paths import PATHS
 
 
 def compute_evaluation_metrics(pred_binary, masks):
