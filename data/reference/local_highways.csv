@@ -1,0 +1,31 @@
+road_id,road_name,road_type,ref,pixel_x,pixel_y,lat,lon
+1,Araniko Highway,primary,B.P. Highway,64,32,27.703,85.706
+2,Araniko Highway,primary,B.P. Highway,72,48,27.698,85.724
+3,Araniko Highway,primary,B.P. Highway,80,64,27.690,85.741
+4,Araniko Highway,primary,B.P. Highway,88,80,27.682,85.759
+5,Araniko Highway,primary,B.P. Highway,96,96,27.673,85.776
+6,Araniko Highway,primary,B.P. Highway,104,112,27.665,85.793
+7,Mechi Highway,primary,H01,32,64,27.720,85.670
+8,Mechi Highway,primary,H01,40,80,27.712,85.687
+9,Mechi Highway,primary,H01,48,96,27.703,85.705
+10,Prithvi Highway,primary,H02,112,40,27.680,85.810
+11,Prithvi Highway,primary,H02,120,56,27.672,85.827
+12,Prithvi Highway,primary,H02,96,24,27.695,85.778
+13,Sindhupalchok District Road,secondary,D01,56,56,27.715,85.730
+14,Sindhupalchok District Road,secondary,D01,64,72,27.707,85.748
+15,Sindhupalchok District Road,secondary,D01,72,88,27.699,85.765
+16,Helambu Road,secondary,D02,32,96,27.710,85.668
+17,Helambu Road,secondary,D02,40,112,27.702,85.685
+18,Balephi Khola Track,track,T01,88,48,27.698,85.762
+19,Balephi Khola Track,track,T01,96,64,27.690,85.779
+20,Tatopani Border Road,secondary,D03,120,96,27.668,85.830
+21,Tatopani Border Road,secondary,D03,112,112,27.660,85.813
+22,Jiri Highway,primary,H06,40,40,27.728,85.688
+23,Jiri Highway,primary,H06,48,56,27.720,85.705
+24,Jiri Highway,primary,H06,56,72,27.711,85.723
+25,Lamosangu-Jiri Road,secondary,D04,64,88,27.703,85.740
+26,Lamosangu-Jiri Road,secondary,D04,72,104,27.695,85.757
+27,Bhotekoshi Valley Road,track,T02,104,80,27.687,85.798
+28,Bhotekoshi Valley Road,track,T02,112,96,27.679,85.815
+29,Sunkoshi Corridor,secondary,D05,80,32,27.720,85.755
+30,Sunkoshi Corridor,secondary,D05,88,48,27.712,85.772
