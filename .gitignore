@@ -1,5 +1,5 @@
 # --- Ignore Heavy Datasets (Crucial!) ---
-datasets/
+data/
 *.h5
 *.npy
 *.zip
