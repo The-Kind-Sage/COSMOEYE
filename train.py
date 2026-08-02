@@ -2,6 +2,7 @@ import os
 import json
 import time
 import csv
+import datetime
 import random
 import copy
 import importlib.util
@@ -737,8 +738,15 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
     best_ema_iou = 0.0
     swa_snapshots = []
 
-    # Per-epoch history log (CSV) for trend analysis
-    history_path = "train_history.csv"
+    # Per-epoch history log (CSV) for trend analysis. Every run gets its own
+    # timestamped directory so records from previous runs are never
+    # overwritten; all runs stay available under training_runs/.
+    run_tag = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = os.path.join("training_runs", run_tag)
+    os.makedirs(run_dir, exist_ok=True)
+    history_path = os.path.join(run_dir, "train_history.csv")
+    epoch_log_path = os.path.join(run_dir, "epoch_log.txt")
+    summary_path = os.path.join(run_dir, "train_summary.txt")
     with open(history_path, "w", newline="") as hf:
         csv.writer(hf).writerow(
             ["epoch", "train_loss", "val_loss", "val_iou", "val_f1",
@@ -804,10 +812,13 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
         if (epoch + 1) % 2 == 0:
             refresh_tile_trust()
 
-        print(f"--- Epoch [{epoch+1}/{epochs}] Complete. Mean Train Loss: {mean_train_loss:.4f} | "
-              f"Val IoU: {ema_metrics['iou'] * 100:.1f}% | "
-              f"Val F1: {ema_metrics['f1'] * 100:.1f}% | Threshold: {ema_metrics['threshold']:.2f} | "
-              f"LR: {scheduler.get_last_lr()[0]:.2e} ---\n")
+        epoch_line = (f"--- Epoch [{epoch+1}/{epochs}] Complete. Mean Train Loss: {mean_train_loss:.4f} | "
+                      f"Val IoU: {ema_metrics['iou'] * 100:.1f}% | "
+                      f"Val F1: {ema_metrics['f1'] * 100:.1f}% | Threshold: {ema_metrics['threshold']:.2f} | "
+                      f"LR: {scheduler.get_last_lr()[0]:.2e} ---")
+        print(epoch_line + "\n")
+        with open(epoch_log_path, "a") as ef:
+            ef.write(epoch_line + "\n")
 
         # Save the checkpoint only when validation IoU improves
         if ema_metrics["iou"] > best_ema_iou:
@@ -892,29 +903,52 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
     inf_speed_ms = (time.time() - inf_start) * 1000
     peak_vram_gb = torch.cuda.max_memory_allocated(0) / (1024 ** 3) if device.type == "cuda" else 0.0
 
-    print("\n================ TRAINING SUMMARY ================")
-    print("Model Architecture: Custom PyTorch U-Net (42 Channels Temporal 3-Window, 3-Level)")
-    print("                    SE + Residual + Skip Spatial-Attention + Deep Supervision + torch.compile")
-    print(f"Total Training Time: {hours}h {minutes}m {seconds}s ({epochs} Epochs)")
-    print("")
-    print("--- Evaluation Metrics (Held-Out Validation Split, NDVI-Gated, Tuned Threshold, 12-view TTA) ---")
-    print(f"Best Threshold: {final_metrics['threshold']:.2f}")
-    print(f"Accuracy:  {final_metrics['accuracy'] * 100:.1f}%")
-    print(f"Precision: {final_metrics['precision'] * 100:.1f}%")
-    print(f"Recall:    {final_metrics['recall'] * 100:.1f}%")
-    print(f"F1-Score:  {final_metrics['f1'] * 100:.1f}%")
-    print(f"Mean IoU:  {final_metrics['iou'] * 100:.1f}%  <-- Best validation track (NDVI-gated)")
-    print(f"Precision at recall >= 60%: {final_metrics['precision_at_recall'] * 100:.1f}% "
-          f"(threshold {final_metrics['threshold_at_recall']:.2f})")
-    print(f"Raw (ungated) reference: P {final_metrics['raw_precision'] * 100:.1f}% | "
-          f"R {final_metrics['raw_recall'] * 100:.1f}% | F1 {final_metrics['raw_f1'] * 100:.1f}% | "
-          f"IoU {final_metrics['raw_iou'] * 100:.1f}% @ {final_metrics['raw_threshold']:.2f}")
-    print("")
-    print("--- Operational Footprint ---")
-    print(f"Weight File Size:  {file_size_mb:.1f} MB")
-    print(f"Inference Speed:   {inf_speed_ms:.1f} ms / image frame")
-    print(f"Peak VRAM Usage:   {peak_vram_gb:.1f} GB")
-    print("==================================================\n")
+    summary_text = f"""
+================ TRAINING SUMMARY ================
+Run Directory: {run_dir}
+Model Architecture: Custom PyTorch U-Net (42 Channels Temporal 3-Window, 3-Level)
+                    SE + Residual + Skip Spatial-Attention + Deep Supervision + torch.compile
+Total Training Time: {hours}h {minutes}m {seconds}s ({epochs} Epochs)
+
+--- Evaluation Metrics (Held-Out Validation Split, NDVI-Gated, Tuned Threshold, 12-view TTA) ---
+Best Threshold: {final_metrics['threshold']:.2f}
+Accuracy:  {final_metrics['accuracy'] * 100:.1f}%
+Precision: {final_metrics['precision'] * 100:.1f}%
+Recall:    {final_metrics['recall'] * 100:.1f}%
+F1-Score:  {final_metrics['f1'] * 100:.1f}%
+Mean IoU:  {final_metrics['iou'] * 100:.1f}%  <-- Best validation track (NDVI-gated)
+Precision at recall >= 60%: {final_metrics['precision_at_recall'] * 100:.1f}% (threshold {final_metrics['threshold_at_recall']:.2f})
+Raw (ungated) reference: P {final_metrics['raw_precision'] * 100:.1f}% | R {final_metrics['raw_recall'] * 100:.1f}% | F1 {final_metrics['raw_f1'] * 100:.1f}% | IoU {final_metrics['raw_iou'] * 100:.1f}% @ {final_metrics['raw_threshold']:.2f}
+
+--- Operational Footprint ---
+Weight File Size:  {file_size_mb:.1f} MB
+Inference Speed:   {inf_speed_ms:.1f} ms / image frame
+Peak VRAM Usage:   {peak_vram_gb:.1f} GB
+==================================================
+"""
+    print(summary_text)
+    with open(summary_path, "w") as sf:
+        sf.write(summary_text)
+
+    # Cumulative per-run summary so every training session stays on record
+    runs_summary_path = os.path.join("training_runs", "runs_summary.csv")
+    runs_header = ["run", "epochs", "train_time_s", "threshold", "accuracy",
+                   "precision", "recall", "f1", "iou", "weights_mb",
+                   "inf_speed_ms", "peak_vram_gb"]
+    is_new = not os.path.exists(runs_summary_path)
+    with open(runs_summary_path, "a", newline="") as rf:
+        w = csv.writer(rf)
+        if is_new:
+            w.writerow(runs_header)
+        w.writerow([run_tag, epochs, int(elapsed_time),
+                    f"{final_metrics['threshold']:.2f}",
+                    f"{final_metrics['accuracy'] * 100:.1f}",
+                    f"{final_metrics['precision'] * 100:.1f}",
+                    f"{final_metrics['recall'] * 100:.1f}",
+                    f"{final_metrics['f1'] * 100:.1f}",
+                    f"{final_metrics['iou'] * 100:.1f}",
+                    f"{file_size_mb:.1f}", f"{inf_speed_ms:.1f}",
+                    f"{peak_vram_gb:.1f}"])
 
 
 if __name__ == "__main__":
