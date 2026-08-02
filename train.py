@@ -818,7 +818,7 @@ def train_pipeline(epochs=20, batch_size=16, lr=2e-4, pos_weight=6.0,
         model.load_state_dict(ema_state)
         ema_metrics = evaluate_dataset(model, val_loader, criterion, device,
                                        use_tta=True, tta_views=2,
-                                       ndvi_gate=True, ndvi_mean=ndvi_mean,
+                                       ndvi_gate=False, ndvi_mean=ndvi_mean,
                                        ndvi_std=ndvi_std)
         model.load_state_dict(saved_state)
         mean_train_loss = running_loss / total_batches
@@ -887,7 +887,7 @@ def train_pipeline(epochs=20, batch_size=16, lr=2e-4, pos_weight=6.0,
         swa_metrics = evaluate_dataset(model, val_loader, criterion, device,
                                        thresholds=np.arange(0.01, 0.99, 0.01),
                                        scales=(0.9, 1.0, 1.1),
-                                       ndvi_gate=True, ndvi_mean=ndvi_mean,
+                                       ndvi_gate=False, ndvi_mean=ndvi_mean,
                                        ndvi_std=ndvi_std)
         if swa_metrics["iou"] > best_ema_iou:
             best_ema_iou = swa_metrics["iou"]
@@ -909,7 +909,7 @@ def train_pipeline(epochs=20, batch_size=16, lr=2e-4, pos_weight=6.0,
         model, val_loader, criterion, device,
         thresholds=np.arange(0.01, 0.99, 0.01),
         scales=(0.9, 1.0, 1.1),
-        ndvi_gate=True, ndvi_mean=ndvi_mean, ndvi_std=ndvi_std,
+        ndvi_gate=False, ndvi_mean=ndvi_mean, ndvi_std=ndvi_std,
     )
 
     # Persist the threshold that belongs to the numbers printed below. The
@@ -918,7 +918,7 @@ def train_pipeline(epochs=20, batch_size=16, lr=2e-4, pos_weight=6.0,
     # operating point must come from the same evaluation that is reported.
     with open(threshold_output_path, "w") as jf:
         json.dump({"threshold": final_metrics["threshold"],
-                   "ndvi_gate": True,
+                   "ndvi_gate": False,
                    "ndvi_gate_threshold": NDVI_GATE_THRESHOLD}, jf)
 
     file_size_mb = os.path.getsize(weights_output_path) / (1024 * 1024) if os.path.exists(weights_output_path) else 0.0
@@ -944,15 +944,15 @@ Model Architecture: Custom PyTorch U-Net (42 Channels Temporal 3-Window, 3-Level
                     SE + Residual + Skip Spatial-Attention + Deep Supervision + torch.compile
 Total Training Time: {hours}h {minutes}m {seconds}s ({epochs} Epochs)
 
---- Evaluation Metrics (Held-Out Validation Split, NDVI-Gated, Tuned Threshold, 12-view TTA) ---
+--- Evaluation Metrics (Held-Out Validation Split, Raw/Ungated, Tuned Threshold, 12-view TTA) ---
 Best Threshold: {final_metrics['threshold']:.2f}
 Accuracy:  {final_metrics['accuracy'] * 100:.1f}%
 Precision: {final_metrics['precision'] * 100:.1f}%
 Recall:    {final_metrics['recall'] * 100:.1f}%
 F1-Score:  {final_metrics['f1'] * 100:.1f}%
-Mean IoU:  {final_metrics['iou'] * 100:.1f}%  <-- Best validation track (NDVI-gated)
+Mean IoU:  {final_metrics['iou'] * 100:.1f}%  <-- Best validation track (Raw/Ungated)
 Precision at recall >= 60%: {final_metrics['precision_at_recall'] * 100:.1f}% (threshold {final_metrics['threshold_at_recall']:.2f})
-Raw (ungated) reference: P {final_metrics['raw_precision'] * 100:.1f}% | R {final_metrics['raw_recall'] * 100:.1f}% | F1 {final_metrics['raw_f1'] * 100:.1f}% | IoU {final_metrics['raw_iou'] * 100:.1f}% @ {final_metrics['raw_threshold']:.2f}
+Reference raw checks: P {final_metrics['raw_precision'] * 100:.1f}% | R {final_metrics['raw_recall'] * 100:.1f}% | F1 {final_metrics['raw_f1'] * 100:.1f}% | IoU {final_metrics['raw_iou'] * 100:.1f}% @ {final_metrics['raw_threshold']:.2f}
 
 --- Operational Footprint ---
 Weight File Size:  {file_size_mb:.1f} MB
