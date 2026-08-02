@@ -1,1 +1,1 @@
-{"threshold": 0.18000000000000002, "ndvi_gate": true, "ndvi_gate_threshold": 0.48}
+{"threshold": 0.3, "ndvi_gate": true, "ndvi_gate_threshold": 0.48}
