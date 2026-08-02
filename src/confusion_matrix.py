@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from model import CustomUNet
 from dataset import LandslideDataset, NDVI_CHANNEL
 from train import tta_probabilities
+from predict import infer_base_filters
 from paths import PATHS
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -56,10 +57,11 @@ val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False, num_workers=0)
 ndvi_mean = float(full_dataset.norm_mean[NDVI_CHANNEL])
 ndvi_std = float(full_dataset.norm_std[NDVI_CHANNEL])
 
-model = CustomUNet(in_channels=42, out_channels=1).to(device)
-model.load_state_dict(
-    torch.load(weights_path, map_location=device, weights_only=True)
-)
+state = torch.load(weights_path, map_location=device, weights_only=True)
+base_filters = infer_base_filters(state)
+model = CustomUNet(in_channels=42, out_channels=1,
+                   base_filters=base_filters).to(device)
+model.load_state_dict(state)
 model.to(device).eval()
 
 results = []
