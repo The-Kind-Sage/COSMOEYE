@@ -94,16 +94,21 @@ class CustomUNet(nn.Module):
     4x4 px) and a 8x8 bottleneck destroys them completely. Keeping the
     spatial resolution higher lets the decoder reconstruct small blobs.
 
-    Upgrades over the previous build:
-      - wider filters (96 base instead of 64)  -> more capacity
+    Capacity is deliberately modest (64 base filters, ~8.2M params). The 96-filter
+    / 18.3M build overfit hard on this dataset: across a 20-epoch run its training
+    loss fell 60% while validation IoU DROPPED from 0.192 to 0.167, peaking at
+    epoch 1 and never recovering. ~12k tiles at a ~1.5% positive rate with noisy
+    hand-drawn polygons cannot support that many parameters.
+
+    Features:
       - SE channel attention in every block
       - residual shortcuts (ResUNet)           -> deeper gradient flow
-      - dropout at the bottleneck              -> noisy-label robustness
+      - dropout at the bottleneck AND the two coarse decoder levels
       - deep supervision (aux losses on the two coarse decoder levels)
     """
 
-    def __init__(self, in_channels=42, out_channels=1, base_filters=96,
-                 deep_supervision=True, prior_prob=0.015):
+    def __init__(self, in_channels=42, out_channels=1, base_filters=64,
+                 deep_supervision=True, prior_prob=0.015, dropout=0.2):
         super(CustomUNet, self).__init__()
         self.deep_supervision = deep_supervision
         b = base_filters
@@ -119,14 +124,20 @@ class CustomUNet(nn.Module):
         self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
 
         # --- BOTTLENECK (with dropout against label noise) ---
-        self.bottleneck = DoubleConvBlock(b * 4, b * 8, use_dropout=True, p=0.1)
+        self.bottleneck = DoubleConvBlock(b * 4, b * 8, use_dropout=True, p=dropout)
 
         # --- DECODER (Upsampling) ---
+        # The two coarse decoder levels also get dropout. With only ~12k noisy
+        # tiles, the decoder was free to memorize individual polygons: training
+        # loss fell 60% across 20 epochs while validation IoU went DOWN. Dropout
+        # here regularizes the levels with the most parameters.
         self.upconv3 = nn.ConvTranspose2d(b * 8, b * 4, kernel_size=2, stride=2)
-        self.up3 = DoubleConvBlock(b * 4 + b * 4, b * 4)
+        self.up3 = DoubleConvBlock(b * 4 + b * 4, b * 4,
+                                   use_dropout=dropout > 0, p=dropout * 0.5)
 
         self.upconv2 = nn.ConvTranspose2d(b * 4, b * 2, kernel_size=2, stride=2)
-        self.up2 = DoubleConvBlock(b * 2 + b * 2, b * 2)
+        self.up2 = DoubleConvBlock(b * 2 + b * 2, b * 2,
+                                   use_dropout=dropout > 0, p=dropout * 0.5)
 
         self.upconv1 = nn.ConvTranspose2d(b * 2, b, kernel_size=2, stride=2)
         self.up1 = DoubleConvBlock(b + b, b)

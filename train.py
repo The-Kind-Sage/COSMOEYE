@@ -472,9 +472,10 @@ class EventGroupedSampler(Sampler):
         return self.num_samples
 
 
-def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
+def train_pipeline(epochs=20, batch_size=16, lr=2e-4, pos_weight=6.0,
                    use_compile=True, val_fraction=0.1, loader_workers=2,
-                   refine_threshold=None):
+                   refine_threshold=None, base_filters=64, dropout=0.2,
+                   weight_decay=3e-4, patience=6, pos_weight_decay=0.0):
     """Executes training with a held-out validation split and real metrics."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -687,7 +688,9 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
         print(f"  -> Self-paced trust refresh: mean tile IoU {ious.mean():.3f} | "
               f"trust mean {tile_trust.mean():.3f}")
 
-    model = CustomUNet(in_channels=42, out_channels=1).to(device)
+    model = CustomUNet(in_channels=42, out_channels=1,
+                       base_filters=base_filters, dropout=dropout).to(device)
+    n_params = sum(p.numel() for p in model.parameters()) / 1e6
     if use_compile:
         if importlib.util.find_spec("triton") is None:
             print("torch.compile: skipped (triton unavailable for this Python/Windows build); running eager")
@@ -705,10 +708,13 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
             except Exception as exc:
                 print(f"torch.compile: failed ({exc}); running eager")
     criterion = WeightedBCEDiceLoss(pos_weight=pos_weight, dice_weight=1.5)
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    # pct_start 0.15 (was 0.30): validation IoU peaked during WARMUP at the
+    # lowest LR the model ever saw and fell as the LR climbed, so the schedule
+    # should spend less time near the peak and more time annealing.
     scheduler = optim.lr_scheduler.OneCycleLR(
         optimizer, max_lr=lr, total_steps=len(train_loader) * epochs,
-        pct_start=0.3, div_factor=10, final_div_factor=100,
+        pct_start=0.15, div_factor=10, final_div_factor=100,
     )
     scaler = torch.amp.GradScaler("cuda", enabled=(device.type == "cuda"))
 
@@ -727,7 +733,12 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
     print(f"Validation Split Size                  : {len(val_dataset)} (event-disjoint, persisted)")
     print(f"Validation Positive Tiles              : {sum(1 for i in val_indices if pos_fractions[i] > 0.001)} (capped at 65%)")
     print(f"Total Optimization Steps per Epoch     : {len(train_loader)}")
-    print(f"Loss: BCE(pos_w {criterion.pos_weight}) + Dice(1.5) + 0.4x DeepSup + 0.3x Tversky | Smoothing 0.05 | Noise weights ON")
+    print(f"Model: {n_params:.1f}M params (base_filters {base_filters}, dropout {dropout})")
+    print(f"Optim: AdamW lr {lr:.1e} (OneCycle, 15% warmup) | weight_decay {weight_decay:.1e} "
+          f"| early stop patience {patience if patience > 0 else 'off'}")
+    print(f"Loss: BCE(pos_w {criterion.pos_weight:.2f}"
+          f"{', constant' if pos_weight_decay == 0 else f', decaying {pos_weight_decay:.0%}'}) "
+          f"+ Dice(1.5) + 0.4x DeepSup + 0.3x Tversky | Smoothing 0.05 | Noise weights ON")
     print(f"NDVI gate: ON (suppress predictions on vegetated post-event pixels)")
     print(f"DataLoader workers: {loader_workers} train (persistent) + 0 val + 0 trust "
           f"| peak {loader_workers} spawned processes (~1.9 GB commit each)")
@@ -736,6 +747,7 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
 
     total_batches = len(train_loader)
     best_ema_iou = 0.0
+    epochs_since_best = 0
     swa_snapshots = []
 
     # Per-epoch history log (CSV) for trend analysis. Every run gets its own
@@ -760,9 +772,17 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
         # EMA decay ramps 0.99 -> 0.999 over the first 5 epochs (early
         # weights are too volatile to average at full strength).
         ema_decay = 0.99 + 0.009 * min(1.0, epoch / 5.0)
-        # pos_weight ramps 6.0 -> ~3.5: the model starts recall-hungry
-        # (learn the positive class), then leans precision to refine edges.
-        criterion.pos_weight = pos_weight * (1.0 - 0.42 * min(1.0, epoch / (0.7 * epochs)))
+        # pos_weight is CONSTANT by default (pos_weight_decay=0.0).
+        # The old ramp (6.0 -> 3.5) was meant to trade recall for precision late
+        # in training, but it was engineering the exact degradation we measured:
+        # over 20 epochs recall fell 0.45 -> 0.24 while precision only rose
+        # 0.25 -> 0.35, so IoU dropped monotonically, and the tuned threshold
+        # collapsed 0.32 -> 0.02 as the model drifted toward predicting
+        # background everywhere. A moving objective also makes per-epoch IoU
+        # non-comparable: each epoch was scored against a different loss.
+        criterion.pos_weight = pos_weight * (
+            1.0 - pos_weight_decay * min(1.0, epoch / max(1e-9, 0.7 * epochs))
+        )
 
         for batch_idx, (images, masks, weights) in enumerate(train_loader):
             images = images.to(device, non_blocking=True)
@@ -823,10 +843,15 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
         # Save the checkpoint only when validation IoU improves
         if ema_metrics["iou"] > best_ema_iou:
             best_ema_iou = ema_metrics["iou"]
+            epochs_since_best = 0
             torch.save(export_state_dict(ema_state), weights_output_path)
             with open(threshold_output_path, "w") as jf:
                 json.dump({"threshold": ema_metrics["threshold"]}, jf)
             print(f"  -> New best validation IoU ({best_ema_iou * 100:.1f}%). Weights + threshold saved.")
+        else:
+            epochs_since_best += 1
+            print(f"  -> No improvement for {epochs_since_best} epoch(s) "
+                  f"(best {best_ema_iou * 100:.1f}%)")
 
         with open(history_path, "a", newline="") as hf:
             csv.writer(hf).writerow([
@@ -836,6 +861,15 @@ def train_pipeline(epochs=20, batch_size=16, lr=1e-3, pos_weight=6.0,
                 f"{ema_metrics['threshold']:.2f}", f"{scheduler.get_last_lr()[0]:.2e}",
                 f"{best_ema_iou:.4f}",
             ])
+
+        # Early stopping. The 20-epoch run peaked at epoch 1 and then spent 19
+        # epochs getting worse; there is no reason to keep burning hours once
+        # validation has clearly stopped improving.
+        if patience > 0 and epochs_since_best >= patience:
+            print(f"\nEarly stop: no validation improvement for {patience} epochs "
+                  f"(best IoU {best_ema_iou * 100:.1f}% at epoch {epoch + 1 - epochs_since_best}). "
+                  f"Stopping at epoch {epoch + 1}/{epochs}.")
+            break
 
     elapsed_time = time.time() - start_time
     hours, rem = divmod(int(elapsed_time), 3600)
@@ -959,8 +993,24 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", dest="epochs_flag", type=int, default=None,
                         help="number of epochs (flag form)")
     parser.add_argument("--batch", type=int, default=16)
-    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--lr", type=float, default=2e-4,
+                        help="max LR for OneCycle (default 2e-4). The old 1e-3 "
+                             "default overfit: validation IoU peaked during "
+                             "warmup at the LOWEST LR and fell as LR climbed.")
     parser.add_argument("--pos-weight", type=float, default=6.0)
+    parser.add_argument("--pos-weight-decay", type=float, default=0.0,
+                        help="fraction by which pos_weight decays across the run "
+                             "(default 0.0 = constant). The old hard-coded 0.42 "
+                             "drove recall from 0.45 down to 0.24.")
+    parser.add_argument("--base-filters", type=int, default=64,
+                        help="model width (default 64, ~8.2M params). The 96 "
+                             "setting is ~18.3M and overfits this dataset.")
+    parser.add_argument("--dropout", type=float, default=0.2,
+                        help="bottleneck dropout; decoder levels use half this")
+    parser.add_argument("--weight-decay", type=float, default=3e-4)
+    parser.add_argument("--patience", type=int, default=6,
+                        help="early stop after N epochs without val improvement "
+                             "(0 disables)")
     parser.add_argument("--no-compile", action="store_true",
                         help="disable torch.compile (fallback: eager mode)")
     parser.add_argument("--refine-threshold", type=float, default=None,
@@ -978,4 +1028,7 @@ if __name__ == "__main__":
     train_pipeline(epochs=epochs, batch_size=args.batch, lr=args.lr,
                    pos_weight=args.pos_weight, use_compile=not args.no_compile,
                    refine_threshold=args.refine_threshold,
-                   loader_workers=args.workers)
+                   loader_workers=args.workers,
+                   base_filters=args.base_filters, dropout=args.dropout,
+                   weight_decay=args.weight_decay, patience=args.patience,
+                   pos_weight_decay=args.pos_weight_decay)
