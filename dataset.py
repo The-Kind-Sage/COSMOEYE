@@ -129,10 +129,11 @@ def compute_label_weights(mask, raw_ndvi):
 class LandslideDataset(Dataset):
     def __init__(self, img_dir="./datasets/TrainData/img/",
                  mask_dir="./datasets/TrainData/mask/",
-                 augmentations=None):
+                 augmentations=None, refine_threshold=None):
         self.img_dir = img_dir
         self.mask_dir = mask_dir
         self.augmentations = augmentations
+        self.refine_threshold = refine_threshold
         # Only index tiles that can actually feed the temporal network:
         # the (3,128,128,14) change-pair layout packs to ~2.75 MB on disk.
         # Any stale/legacy file (e.g. old single-frame (128,128,14) tiles)
@@ -180,6 +181,16 @@ class LandslideDataset(Dataset):
             post_ndvi = raw_img[min(POST_STACK, raw_img.shape[0] - 1), ..., NDVI_CHANNEL]
         else:
             post_ndvi = raw_img[..., NDVI_CHANNEL]
+
+        # Label refinement: strip mask positives that are still vegetated in
+        # the POST window. Hand-drawn polygons over-cover the real landslide
+        # (~40% of positive pixels look like vegetation), and training on that
+        # noise caps precision. A genuine post-event landslide is bare ground
+        # (low NDVI), so positives with high POST NDVI are relabeled 0. Same
+        # threshold as the inference gate so train and eval agree.
+        if self.refine_threshold is not None:
+            mask_u8[(mask_u8 > 0) & (post_ndvi >= self.refine_threshold)] = 0
+
         weight_map = compute_label_weights(mask_u8, post_ndvi)
 
         # Boost loss weight on the label boundary ring (3x3 morph ring):
