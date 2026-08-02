@@ -21,10 +21,12 @@ For full pipeline details (data layout, architecture, loss, sampling, augmentati
 
 ## Team
 
-| Member | GitHub | Role |
-|---|---|---|
-| Rohit Chand | [The-Kind-Sage](https://github.com/The-Kind-Sage) | Model architecture, training pipeline, evaluation |
-| scar (Alish Rokaya) | — | Data pipeline, dashboard, testing |
+| Member | Role |
+|---|---|
+| Rohit Chand | Leader |
+| Alish Roka | Team member |
+| Diwash Jung Thapa | Team member |
+| Sandeep Thapa | Team member |
 
 ---
 
