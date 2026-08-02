@@ -12,15 +12,13 @@ def compile_nlp_input_vector(spatial_metadata_list, default_district="Sindhupalc
 
     # Extract metrics out of the spatial math dictionary object
     area = primary_hazard["surface_area_sqm"]
-    road = primary_hazard["nearest_infrastructure"]
-    blocked_flag = primary_hazard["infrastructure_blocked"]
+    centroid = primary_hazard["centroid_pixel"]
 
     # Compile the final structured token stream sequence string layout
     structured_prompt_string = (
         f"INPUT_VEC: District={default_district}; "
         f"Area={area}sqm; "
-        f"Nearest_Road={road}; "
-        f"Blocked={blocked_flag};"
+        f"Centroid={centroid[0]},{centroid[1]};"
     )
 
     return structured_prompt_string
@@ -34,9 +32,6 @@ if __name__ == "__main__":
         "object_id": 1,
         "centroid_pixel": (42, 53),
         "surface_area_sqm": 3600,
-        "nearest_infrastructure": "Arniko_Highway",
-        "infrastructure_blocked": "Yes",
-        "proximity_distance_units": 3.61
     }]
 
     # Process Step 17 compression loop
