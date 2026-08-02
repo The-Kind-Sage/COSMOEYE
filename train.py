@@ -104,7 +104,7 @@ class WeightedBCEDiceLoss(nn.Module):
         return bce_loss + self.dice_weight * dice_loss + self.tversky_weight * (1.0 - tversky)
 
 
-POS_FRAC_CACHE_PATH = "./datasets/TrainData/pos_frac_cache.npy"
+POS_FRAC_CACHE_PATH = PATHS.POS_FRAC_CACHE
 SWA_SNAPSHOTS = 5
 
 
@@ -369,7 +369,7 @@ def build_event_disjoint_split(dataset, val_fraction=0.1, seed=42,
     Background (unannotated) tiles fill the remainder.
     """
     import json as _json
-    metadata_path = "./datasets/TrainData/tile_metadata.json"
+    metadata_path = PATHS.TILE_METADATA
     meta = {}
     if os.path.exists(metadata_path):
         with open(metadata_path, "r") as jf:
@@ -494,14 +494,12 @@ def train_pipeline(epochs=20, batch_size=16, lr=2e-4, pos_weight=6.0,
     torch.manual_seed(0)
     random.seed(0)
 
-    train_img_dir = "./datasets/TrainData/img/"
-    train_mask_dir = "./datasets/TrainData/mask/"
+    train_img_dir = PATHS.TRAIN_IMG_DIR
+    train_mask_dir = PATHS.TRAIN_MASK_DIR
 
     # Start from a genuinely fresh checkpoint, but ARCHIVE rather than delete.
-    # A hard delete means any crash mid-run destroys the previous run's best
-    # weights along with the current one, leaving nothing to fall back on.
-    weights_output_path = "landslide_unet_weights.pth"
-    threshold_output_path = "landslide_best_threshold.json"
+    weights_output_path = PATHS.WEIGHTS
+    threshold_output_path = PATHS.THRESHOLD_JSON
     for stale in (weights_output_path, threshold_output_path):
         if os.path.exists(stale):
             base, ext = os.path.splitext(stale)
@@ -524,7 +522,7 @@ def train_pipeline(epochs=20, batch_size=16, lr=2e-4, pos_weight=6.0,
 
     # Persist the split so every run evaluates the SAME validation tiles
     # (results across runs stay comparable as the pipeline evolves).
-    split_path = "./datasets/TrainData/val_indices.json"
+    split_path = PATHS.VAL_INDICES
     if os.path.exists(split_path):
         with open(split_path, "r") as jf:
             split_data = json.load(jf)
@@ -565,8 +563,8 @@ def train_pipeline(epochs=20, batch_size=16, lr=2e-4, pos_weight=6.0,
     # batch mixes neighboring tiles of the same event. Self-paced tile trust
     # (refreshed every 2 epochs) down-weights noisy labels inside each group.
     meta = {}
-    if os.path.exists("./datasets/TrainData/tile_metadata.json"):
-        with open("./datasets/TrainData/tile_metadata.json", "r") as jf:
+    if os.path.exists(PATHS.TILE_METADATA):
+        with open(PATHS.TILE_METADATA, "r") as jf:
             meta = json.load(jf)
 
     train_files = [full_dataset.file_list[i] for i in train_indices]
@@ -759,7 +757,7 @@ def train_pipeline(epochs=20, batch_size=16, lr=2e-4, pos_weight=6.0,
     # timestamped directory so records from previous runs are never
     # overwritten; all runs stay available under training_runs/.
     run_tag = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = os.path.join("training_runs", run_tag)
+    run_dir = os.path.join(PATHS.TRAINING_RUNS_DIR, run_tag)
     os.makedirs(run_dir, exist_ok=True)
     history_path = os.path.join(run_dir, "train_history.csv")
     epoch_log_path = os.path.join(run_dir, "epoch_log.txt")
@@ -970,7 +968,7 @@ Peak VRAM Usage:   {peak_vram_gb:.1f} GB
         sf.write(summary_text)
 
     # Cumulative per-run summary so every training session stays on record
-    runs_summary_path = os.path.join("training_runs", "runs_summary.csv")
+    runs_summary_path = PATHS.RUNS_SUMMARY
     runs_header = ["run", "epochs", "train_time_s", "threshold", "accuracy",
                    "precision", "recall", "f1", "iou", "weights_mb",
                    "inf_speed_ms", "peak_vram_gb"]
