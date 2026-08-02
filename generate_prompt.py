@@ -1,7 +1,21 @@
-def compile_nlp_input_vector(spatial_metadata_list, default_district="Sindhupalchok"):
+def compile_nlp_input_vector(spatial_metadata_list, default_district="Sindhupalchok",
+                              nearest_road=None, road_blocked=False):
     """Processes Step 17: Compresses raw geometric measurement vectors into a highly
 
     structured, sequential text prompt template for local NLP ingestion.
+
+    Parameters
+    ----------
+    spatial_metadata_list : list[dict]
+        Output of spatial_math.extract_spatial_metrics — one dict per
+        detected landslide body.
+    default_district : str
+        Administrative district name for the tile.
+    nearest_road : str | None
+        Name of the road nearest to the primary detected landslide, as
+        returned by spatial_math.check_infrastructure_blockage.
+    road_blocked : bool
+        True when the nearest road is within the blockage proximity threshold.
     """
     # If the vision engine detected zero active landslides, generate a clear control string
     if not spatial_metadata_list:
@@ -14,11 +28,17 @@ def compile_nlp_input_vector(spatial_metadata_list, default_district="Sindhupalc
     area = primary_hazard["surface_area_sqm"]
     centroid = primary_hazard["centroid_pixel"]
 
+    # Road proximity flags
+    road_name = nearest_road if nearest_road else "Unknown"
+    blocked_flag = "Yes" if road_blocked else "No"
+
     # Compile the final structured token stream sequence string layout
     structured_prompt_string = (
         f"INPUT_VEC: District={default_district}; "
         f"Area={area}sqm; "
-        f"Centroid={centroid[0]},{centroid[1]};"
+        f"Centroid={centroid[0]},{centroid[1]}; "
+        f"Nearest_Road={road_name}; "
+        f"Blocked={blocked_flag};"
     )
 
     return structured_prompt_string
@@ -34,8 +54,12 @@ if __name__ == "__main__":
         "surface_area_sqm": 3600,
     }]
 
-    # Process Step 17 compression loop
-    compiled_vector_string = compile_nlp_input_vector(mock_spatial_output)
+    # Process Step 17 compression loop (with road blockage flags)
+    compiled_vector_string = compile_nlp_input_vector(
+        mock_spatial_output,
+        nearest_road="Araniko Highway",
+        road_blocked=True,
+    )
 
     print("\n================== STEP 17 PROMPT OUTPUT ==================")
     print("Prompt sequence text stream compiled successfully.")
