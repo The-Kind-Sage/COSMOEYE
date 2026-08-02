@@ -90,6 +90,35 @@ def show_insight(insight):
           "LANDSLIDE DETECTED": "पहिरो पत्ता लाग्यो",
           "NO landslide detected": "पहिरो पत्ता लागेन"}
 
+    # ---- Cloud / occlusion warning (Issue 5) ----
+    valid_frac = insight.get("valid_obs_fraction", None)
+    if valid_frac is not None and valid_frac < 0.80:
+        st.error(
+            f"**Cloud / Occlusion Warning | बादल / ओकुलेसन चेतावनी**  \n"
+            f"Only **{valid_frac * 100:.1f}%** of the POST-event window has valid "
+            f"observations. Results may be unreliable — cloud cover or data gaps "
+            f"could mask or mimic landslide signals.  \n"
+            f"POST विन्डोमा केवल **{valid_frac * 100:.1f}%** वैध अवलोकन उपलब्ध छ।"
+        )
+
+    # ---- Road blockage alert ----
+    if insight.get("road_blocked"):
+        road = insight.get("nearest_road", "Unknown road")
+        dist_m = insight.get("nearest_road_dist_m", 0.0)
+        st.error(
+            f"**Road Blockage Alert | सडक अवरुद्ध चेतावनी**  \n"
+            f"**{road}** is potentially obstructed — landslide deposit detected "
+            f"within **{dist_m:.0f} m**. Verify access routes before dispatching "
+            f"field teams."
+        )
+    elif insight.get("nearest_road") and insight["detected_pixels"] > 0:
+        road = insight["nearest_road"]
+        dist_m = insight.get("nearest_road_dist_m", 0.0)
+        st.info(
+            f"Nearest road: **{road}** ({dist_m:.0f} m from detection) — "
+            f"no blockage within current proximity threshold."
+        )
+
     if insight["detected_pixels"] == 0:
         st.subheader(f"Verdict: {ne['NO landslide detected']}")
     else:
@@ -151,6 +180,17 @@ if run_btn:
         st.stop()
 
     st.success("Inference complete")
+
+    # ---- Human-in-the-loop triage disclaimer (always shown, top of results) ----
+    st.warning(
+        "**TRIAGE AID ONLY — NOT A CONFIRMED HAZARD ASSESSMENT**  \n"
+        "This output is a machine-learning screening tool intended to help "
+        "prioritise field surveys. All detections **must be verified by a "
+        "qualified geohazard specialist** before any emergency response or "
+        "infrastructure decisions are made.  \n"
+        "**केवल ट्रायज सहायता — पुष्टि भएको खतरा मूल्याङ्कन होइन।**"
+    )
+
     show_insight(insight)
 
     # -------------------------------------------------- visual panels
