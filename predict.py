@@ -58,6 +58,18 @@ def _fit_window_count(stacks):
     return np.concatenate([stacks, pad], axis=0)
 
 
+def infer_base_filters(state_dict, default=64):
+    """Read the model width straight out of the checkpoint.
+
+    The default width changed from 96 to 64 (the wider build overfit this
+    dataset). Hard-coding either value makes checkpoints from the other build
+    fail to load with an opaque shape error, so the width is read from the
+    first encoder conv, whose weight is (base_filters, in_channels, 3, 3).
+    """
+    weight = state_dict.get("down1.conv.0.weight")
+    return int(weight.shape[0]) if weight is not None else default
+
+
 def load_normalization_stats():
     """Load the dataset-global z-score stats used during training."""
     if os.path.exists(NORM_STATS_PATH):
@@ -107,10 +119,10 @@ def execute_vision_inference_pass(sample_file_name, csv_path="local_highways.csv
         stack_temporal_stacks(normalized)
     ).unsqueeze(0).to(device)
 
-    unet_model = CustomUNet(in_channels=42, out_channels=1)
-    unet_model.load_state_dict(
-        torch.load(vision_weights, map_location=device, weights_only=True)
-    )
+    state = torch.load(vision_weights, map_location=device, weights_only=True)
+    unet_model = CustomUNet(in_channels=42, out_channels=1,
+                            base_filters=infer_base_filters(state))
+    unet_model.load_state_dict(state)
     unet_model.to(device).eval()
 
     probability_mask = tta_probabilities(unet_model, image_tensor, device).squeeze().cpu().numpy()
