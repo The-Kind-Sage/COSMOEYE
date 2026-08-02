@@ -1,0 +1,2 @@
+run_id,val_tiles,threshold,accuracy,precision,recall,f1,iou,precision_at_recall60,raw_precision,raw_recall,raw_f1,raw_iou,raw_threshold,weights_path
+2026-08-02_07-44-14,1362,0.18,93.3,25.2,44.5,32.1,19.1,17.8,28.1,50.4,36.1,22.0,0.28,landslide_unet_weights.pth
