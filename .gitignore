@@ -35,3 +35,6 @@ landslide_best_threshold.json
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# --- Ignore Image Outputs ---
+*.png
