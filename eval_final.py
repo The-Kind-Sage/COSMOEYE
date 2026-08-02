@@ -1,4 +1,8 @@
 import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+
 import csv
 import json
 import time
@@ -11,14 +15,15 @@ from dataset import (LandslideDataset, NDVI_CHANNEL,
                      normalize_standardized_image, stack_temporal_stacks)
 from train import evaluate_dataset, WeightedBCEDiceLoss
 from predict import tta_probabilities, PIXEL_AREA_SQM
+from paths import PATHS
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-train_img_dir = "./datasets/TrainData/img/"
-train_mask_dir = "./datasets/TrainData/mask/"
-split_path = "./datasets/TrainData/val_indices.json"
-weights_path = "landslide_unet_weights.pth"
-threshold_path = "landslide_best_threshold.json"
+train_img_dir  = PATHS.TRAIN_IMG_DIR
+train_mask_dir = PATHS.TRAIN_MASK_DIR
+split_path     = PATHS.VAL_INDICES
+weights_path   = PATHS.WEIGHTS
+threshold_path = PATHS.THRESHOLD_JSON
 
 full_dataset = LandslideDataset(img_dir=train_img_dir, mask_dir=train_mask_dir)
 
@@ -75,7 +80,7 @@ with open(threshold_path, "r") as jf:
 threshold = saved_threshold.get("threshold", 0.5)
 
 rows = []
-per_img_dir = "per_image_val_results"
+per_img_dir = PATHS.PER_IMAGE_VAL_DIR
 os.makedirs(per_img_dir, exist_ok=True)
 
 with torch.no_grad():
@@ -110,7 +115,7 @@ with torch.no_grad():
             f"{gt_px * PIXEL_AREA_SQM:,.0f}",
         ])
 
-per_img_csv = os.path.join(per_img_dir, "per_image_val_results.csv")
+per_img_csv = PATHS.PER_IMAGE_VAL_CSV
 with open(per_img_csv, "w", newline="") as cf:
     writer = csv.writer(cf)
     writer.writerow(["image", "pred_pixels", "gt_pixels", "tp", "fp", "fn",
@@ -135,7 +140,7 @@ print("\n10 largest detections by predicted area:")
 for r in sorted(rows, key=lambda r: -int(r[1]))[:10]:
     print(f"{r[0]:<42} pred {r[10]:>10} m2 | gt {r[11]:>10} m2 | IoU {float(r[6]):.3f}")
 
-results_path = "final_results.csv"
+results_path = PATHS.FINAL_RESULTS_CSV
 file_exists = os.path.exists(results_path)
 with open(results_path, "a", newline="") as cf:
     writer = csv.writer(cf)
