@@ -1,8 +1,8 @@
-# COSMOEYE
+# COSMOS-EYE
 
 **Change Observation and Satellite Monitoring Of Slopes — Nepal**
 
-COSMOEYE is a self-contained deep-learning pipeline for landslide detection from satellite imagery, built from scratch in PyTorch. It ingests multi-temporal Sentinel-2 and DEM data and produces per-pixel landslide segmentation masks, complete with a bilingual (English/Nepali) interactive dashboard for triage of detected landslide events.
+COSMOS-EYE is a self-contained deep-learning pipeline for landslide detection from satellite imagery, built from scratch in PyTorch. It ingests multi-temporal Sentinel-2 and DEM data and produces per-pixel landslide segmentation masks, complete with a bilingual (English/Nepali) interactive dashboard for triage of detected landslide events.
 
 No external cloud APIs are used — the full pipeline (data conversion, training, inference, evaluation, and visualization) runs locally.
 
