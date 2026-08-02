@@ -9,12 +9,12 @@ def _rule_based_bulletin(structured_prompt_string):
     parts = {k.split("=")[0]: k.split("=")[1] for k in structured_prompt_string.replace("INPUT_VEC: ", "").strip(";").split("; ")}
     if parts.get("Anomaly") == "None":
         return f"CRITICAL INCIDENT BRIEF: Disaster risk parameters are currently within normal baseline thresholds across {parts['District']} District. Satellite imagery reveals no active slope displacement anomalies. Transport corridors remain fully operational."
-    block_msg = f"The critical trade network route {parts['Nearest_Road']} is physically BLOCKED by debris flow." if parts['Blocked'] == 'Yes' else f"The nearest transport route {parts['Nearest_Road']} remains open, but emergency teams should monitor adjacent slopes."
     return (
         f"CRITICAL DISASTER BULLETIN - GOVERNMENT OF NEPAL (NDRRMA PROTOCOL)\n"
         f"Location Focus: {parts['District']} District, Nepal\n"
-        f"Satellite observation metrics reveal an extreme mass-wasting event covering approximately {parts['Area']} of land surface slope. "
-        f"{block_msg} Local disaster coordinate teams are advised to deploy immediate response units to this sector."
+        f"Satellite observation metrics reveal an extreme mass-wasting event covering approximately {parts['Area']} of land surface slope, "
+        f"centred on tile grid position {parts.get('Centroid', 'unknown')}. "
+        f"Local disaster coordinate teams are advised to deploy immediate response units to this sector."
     )
 
 
@@ -81,8 +81,6 @@ if __name__ == "__main__":
         "object_id": 1,
         "centroid_pixel": (52, 42),
         "surface_area_sqm": 2500,
-        "nearest_infrastructure": "Arniko_Highway",
-        "infrastructure_blocked": "Yes"
     }]
 
     # Build prompt (Step 17)
