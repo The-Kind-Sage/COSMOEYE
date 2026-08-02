@@ -1,0 +1,2 @@
+image,detected_pixels,area_sqm,area_ha,n_regions,largest_blob_sqm,scene_coverage_pct,conf_mean,conf_max,ndvi_mean_det,ndvi_mean_scene
+dummy_test_patch.h5,0,0.0,0.00,0,0,0.000,0.000,0.000,nan,0.503
