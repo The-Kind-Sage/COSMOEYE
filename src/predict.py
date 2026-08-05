@@ -11,7 +11,7 @@ from model import CustomUNet
 from dataset import (normalize_standardized_image, stack_temporal_stacks,
                      NORM_STATS_PATH, NDVI_CHANNEL, POST_STACK)
 from spatial_math import extract_spatial_metrics, check_infrastructure_blockage
-from paths import PATHS
+from paths import PATHS, get_latest_weights_path, get_latest_threshold_path
 
 # Number of temporal windows the network expects (PRE / POST / LATE)
 EXPECTED_WINDOWS = 3
@@ -164,7 +164,7 @@ def _build_model_for(weights_mtime):
     model is built once per weights version and never re-read on every call
     (Streamlit reruns / repeated inferences)."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    state = torch.load(PATHS.WEIGHTS, map_location=device,
+    state = torch.load(get_latest_weights_path(), map_location=device,
                        weights_only=True)
     base_filters = infer_base_filters(state)
     unet = CustomUNet(in_channels=42, out_channels=1, base_filters=base_filters)
@@ -174,7 +174,7 @@ def _build_model_for(weights_mtime):
 
 def get_cached_model():
     """Return the cached inference model (caches across reruns)."""
-    return _build_model_for(os.path.getmtime(PATHS.WEIGHTS))
+    return _build_model_for(os.path.getmtime(get_latest_weights_path()))
 
 
 def tta_probabilities(model, image_tensor, device):
@@ -628,7 +628,7 @@ def execute_vision_inference_pass(sample_file_name, save_png=True, verbose=True,
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     test_img_path = resolve_image_path(sample_file_name)
-    vision_weights = PATHS.WEIGHTS
+    vision_weights = get_latest_weights_path()
 
     if not os.path.exists(vision_weights):
         raise FileNotFoundError("Missing local brain weights file! Run train.py first.")
@@ -658,7 +658,7 @@ def execute_vision_inference_pass(sample_file_name, save_png=True, verbose=True,
     threshold = 0.5
     gate_enabled = False
     gate_threshold = NDVI_GATE_THRESHOLD
-    threshold_path = PATHS.THRESHOLD_JSON
+    threshold_path = get_latest_threshold_path()
     if os.path.exists(threshold_path):
         with open(threshold_path, "r") as jf:
             saved = json.load(jf)
