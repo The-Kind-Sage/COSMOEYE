@@ -16,7 +16,7 @@ from model import CustomUNet
 from dataset import LandslideDataset, NDVI_CHANNEL
 from train import tta_probabilities
 from predict import infer_base_filters
-from paths import PATHS
+from paths import PATHS, get_latest_weights_path, get_latest_threshold_path
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -24,16 +24,12 @@ train_img_dir = PATHS.TRAIN_IMG_DIR
 train_mask_dir = PATHS.TRAIN_MASK_DIR
 split_path = PATHS.VAL_INDICES
 
-weights_path = PATHS.WEIGHTS
-if not os.path.exists(weights_path):
-    weights_path = PATHS.WEIGHTS_PREV
+weights_path = get_latest_weights_path()
 
 gate_enabled = True
 gate_threshold = 0.48
 threshold = 0.5
-threshold_path = PATHS.THRESHOLD_JSON
-if not os.path.exists(threshold_path):
-    threshold_path = PATHS.THRESHOLD_JSON_PREV
+threshold_path = get_latest_threshold_path()
 if os.path.exists(threshold_path):
     with open(threshold_path, "r") as jf:
         saved = json.load(jf)
