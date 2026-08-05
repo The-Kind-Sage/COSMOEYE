@@ -12,6 +12,7 @@ Usage
     from paths import PATHS
 """
 import os
+import glob
 
 # Project root = parent of this file's directory (i.e. d:/COSMOEYE)
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
@@ -81,6 +82,55 @@ class PATHS:
     SRC_DIR             = _p("src")
 
 
+# -- Latest-model resolution ------------------------------------------------
+#
+# Model training writes to the canonical PATHS.WEIGHTS file and archives any
+# previous weights to PATHS.WEIGHTS_PREV.  Separate experimental checkpoints
+# (e.g. landslide_unet_weights.refine3ep.pth) can also exist in models/.
+# Inference, the dashboard, the confusion matrix and the evaluation script all
+# want the LATEST usable checkpoint, so instead of hard-coding the canonical
+# filename each consumer resolves the newest non-.prev .pth under models/.
+# "Latest" is determined by file modification time: whichever checkpoint was
+# written most recently is the one that should be live.  .prev.pth archives are
+# always excluded so a rollback file is never mistaken for the live model.
+
+
+def _candidate_weights():
+    """All .pth checkpoint paths under models/, excluding .prev.pth archives."""
+    return [p for p in glob.glob(os.path.join(PATHS.MODELS_DIR, "*.pth"))
+            if not p.endswith(".prev.pth")]
+
+
+def get_latest_weights_path():
+    """Return the most recently written (by mtime) non-archive .pth in models/.
+
+    Falls back to the canonical PATHS.WEIGHTS when no candidates exist, so the
+    rest of the pipeline keeps working even if models/ is empty (predict.py
+    raises its usual "run train.py first" error in that case).
+    """
+    candidates = _candidate_weights()
+    if not candidates:
+        return PATHS.WEIGHTS
+    return max(candidates, key=os.path.getmtime)
+
+
+def get_latest_threshold_path():
+    """Return the threshold JSON that belongs to the latest weights file.
+
+    The canonical threshold file (landslide_best_threshold.json) is rewritten
+    whenever the canonical weights are retrained, so for the canonical weights
+    it is always in sync.  For a non-canonical latest weights file (e.g. a
+    refine3ep experiment) the canonical threshold is still the closest tuning
+    available, so it is returned as the fallback.
+    """
+    latest_weights = get_latest_weights_path()
+    base = os.path.splitext(latest_weights)[0]
+    candidate = f"{base}.json"
+    if os.path.exists(candidate):
+        return candidate
+    return PATHS.THRESHOLD_JSON
+
+
 if __name__ == "__main__":
     import inspect
     print("COSMOEYE project paths")
@@ -89,3 +139,5 @@ if __name__ == "__main__":
         if not name.startswith("_") and isinstance(val, str):
             exists = "OK " if os.path.exists(val) else "-- "
             print(f"  {exists} {name:<28} {val}")
+    print(f"\nLatest weights : {get_latest_weights_path()}")
+    print(f"Latest threshold: {get_latest_threshold_path()}")
