@@ -2,3 +2,4 @@ run_id,val_tiles,threshold,accuracy,precision,recall,f1,iou,precision_at_recall6
 2026-08-02_07-44-14,1362,0.18,93.3,25.2,44.5,32.1,19.1,17.8,28.1,50.4,36.1,22.0,0.28,landslide_unet_weights.pth
 2026-08-02_09-41-49,1362,0.30,93.9,27.9,44.1,34.2,20.6,15.8,27.7,49.3,35.4,21.5,0.27,landslide_unet_weights.pth
 2026-08-02_19-20-20,1362,0.27,93.7,27.2,45.5,34.0,20.5,17.5,29.2,53.9,37.9,23.4,0.34,landslide_unet_weights.pth
+2026-08-02_22-43-04,1362,0.23,95.5,36.9,36.4,36.6,22.4,15.7,36.9,36.4,36.6,22.4,0.23,D:\COSMOEYE\models\landslide_unet_weights.pth
