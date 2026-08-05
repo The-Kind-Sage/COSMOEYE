@@ -15,15 +15,15 @@ from dataset import (LandslideDataset, NDVI_CHANNEL,
                      normalize_standardized_image, stack_temporal_stacks)
 from train import evaluate_dataset, WeightedBCEDiceLoss
 from predict import tta_probabilities, PIXEL_AREA_SQM
-from paths import PATHS
+from paths import PATHS, get_latest_weights_path, get_latest_threshold_path
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 train_img_dir  = PATHS.TRAIN_IMG_DIR
 train_mask_dir = PATHS.TRAIN_MASK_DIR
 split_path     = PATHS.VAL_INDICES
-weights_path   = PATHS.WEIGHTS
-threshold_path = PATHS.THRESHOLD_JSON
+weights_path   = get_latest_weights_path()
+threshold_path = get_latest_threshold_path()
 
 full_dataset = LandslideDataset(img_dir=train_img_dir, mask_dir=train_mask_dir)
 
