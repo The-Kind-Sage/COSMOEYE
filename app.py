@@ -17,7 +17,7 @@ from predict import (execute_vision_inference_pass, resolve_image_path,
                      get_post_rgb, save_insight_panels,
                      PIXEL_AREA_SQM, INSIGHT_SCHEMA_VERSION)
 from dataset import NDVI_CHANNEL, POST_STACK
-from paths import PATHS
+from paths import PATHS, get_latest_weights_path
 
 
 @st.cache_data(show_spinner="Analyzing tile...", ttl=3600)
@@ -172,7 +172,7 @@ target_name = uploaded.name if uploaded is not None else (selection or "dummy_te
 # ---------------------------------------------------------------- main panel
 if run_btn:
     try:
-        weights_mtime = os.path.getmtime(PATHS.WEIGHTS)
+        weights_mtime = os.path.getmtime(get_latest_weights_path())
         img_mtime = os.path.getmtime(resolve_image_path(target_name))
         # spatial_metrics is still produced by the inference pass, but the
         # dashboard no longer renders it as a table.
