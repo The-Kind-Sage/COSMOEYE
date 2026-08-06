@@ -5,6 +5,10 @@ data/
 *.zip
 *.tar.gz
 
+# Sample tiles shipped with the repo for the out-of-the-box demo
+!sample_tiles/
+!sample_tiles/*.h5
+
 # --- Ignore Local Python Virtual Environments ---
 cosmoeye_env/
 env/

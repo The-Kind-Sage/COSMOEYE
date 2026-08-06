@@ -59,7 +59,17 @@ Then run the demo immediately:
 streamlit run app.py
 ```
 
-Upload any Sen12Landslides `.h5` tile in the sidebar, or obtain the dataset as described in step 3.
+The repo ships **5 sample tiles** in `sample_tiles/` (real Sen12Landslides tiles, ~2.6 MB each) so the dashboard works with zero extra downloads. Two ways to use them:
+
+- **App sidebar**: click *"Or upload a custom .h5 file"* and pick a file from `sample_tiles/`, or
+- **CLI**: copy them into the data folder first, then run batch/single inference:
+
+```bash
+mkdir -p data/TestData/img
+copy sample_tiles\*.h5 data\TestData\img     # Windows
+# cp sample_tiles/*.h5 data/TestData/img/    # Linux/macOS
+python src/predict.py chimanimani_s2_1000.h5
+```
 
 > A GitHub release + `tools/download_weights.py` are also provided as a fallback if you want to fetch refreshed weights without cloning them (see [Pretrained model](#pretrained-model)).
 
