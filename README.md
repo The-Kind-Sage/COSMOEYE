@@ -49,7 +49,25 @@ pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.pytor
 pip install -r requirements.txt
 ```
 
-### 2. Data preparation
+### 2. Quickstart (use the pretrained model — no GPU, no data, no training)
+
+The trained weights (~31 MB) and tuned threshold are shipped as a GitHub Release (too large for git). Download them with:
+
+```bash
+python tools/download_weights.py
+```
+
+This installs `models/landslide_unet_weights.pth` + `models/landslide_best_threshold.json`. You also need a few sample tiles to run the dashboard — upload any Sen12Landslides `.h5` tile in the sidebar, or obtain the dataset as described in step 3.
+
+Then run the demo immediately:
+
+```bash
+streamlit run app.py
+```
+
+> If the script reports "No release found", the release has not been published yet — follow the instructions printed by the script (see [Pretrained model](#pretrained-model)).
+
+### 3. Data preparation (only if retraining)
 
 Download the **Sen12Landslides** dataset (see [Data sources](#data-sources)) and convert raw NetCDF tiles into the standardized h5 temporal stacks:
 
@@ -59,7 +77,7 @@ python src/convert_sen12.py
 
 This creates `data/TrainData/img/` + `data/TrainData/mask/` and the sidecar metadata (`tile_metadata.json`, `norm_stats.npz`, `val_indices.json`).
 
-### 3. Train
+### 4. Train (only if retraining)
 
 ```bash
 python train.py 20                                  # 20 epochs (default)
@@ -69,7 +87,7 @@ python train.py 20 --no-compile                     # skip torch.compile
 
 The best checkpoint is saved to `models/landslide_unet_weights.pth` with its tuned threshold in `models/landslide_best_threshold.json`. Per-epoch history and summaries are written under `results/training_runs/`.
 
-### 4. Run inference / the dashboard
+### 5. Run inference / the dashboard
 
 ```bash
 # Streamlit dashboard (detection overlay, probability map, EN/NE reports)
@@ -82,12 +100,31 @@ python src/predict.py <tile_name>
 python src/predict.py batch
 ```
 
-### 5. Evaluate
+### 6. Evaluate
 
 ```bash
 python eval_final.py          # reproduce final metrics on the saved checkpoint
 python src/confusion_matrix.py
 ```
+
+---
+
+## Pretrained model
+
+The trained U-Net weights and its tuned threshold are published as GitHub Release assets (they are too large for git, and are deliberately excluded from the repository):
+
+| Asset | Purpose |
+|---|---|
+| `landslide_unet_weights.pth` | Trained model checkpoint (31 MB, base_filters 64, ~8.2M params) |
+| `landslide_best_threshold.json` | Tuned detection threshold (0.23) + NDVI-gate settings |
+
+Download them with:
+
+```bash
+python tools/download_weights.py
+```
+
+If no release exists yet, publish one from the repository page: **Releases → New release** (tag `v1.0.0`), attach the two files above, and publish.
 
 ---
 
@@ -109,7 +146,7 @@ python src/confusion_matrix.py
   > Hoehn, P., Heidler, K., Behling, R., Zhu, X. X. (2025). *A Spatio-Temporal Dataset for Satellite-Based Landslide Detection.* Scientific Data 12, 1772. https://doi.org/10.1038/s41597-025-06167-2
 
 - **Sentinel-2** data is © ESA/Copernicus, distributed under the Copernicus Programme license terms.
-- This project's code and models are developed by the COSMOEYE team.
+- This project's code and models are developed by the COSMOS-EYE team.
 
 ---
 
