@@ -59,7 +59,7 @@ Then run the demo immediately:
 streamlit run app.py
 ```
 
-The repo ships **5 sample tiles** in `sample_tiles/` (real Sen12Landslides tiles, ~2.6 MB each) so the dashboard works with zero extra downloads. Two ways to use them:
+The repo ships **8 sample tiles** in `sample_tiles/` (real Sen12Landslides tiles, ~2.6 MB each) so the dashboard works with zero extra downloads. Five are Chimanimani tiles (general generalization demo) and **three are Nepal tiles** (`nepal_s2_26/218/253.h5`) — ideal for the Nepal case-study pitch; `nepal_s2_253.h5` comes from the held-out validation split (truly unseen by the model) and triggers real Nepali road alerts (Lamosangu-Jiri Road, Prithvi/Mechi Highways). Two ways to use them:
 
 - **App sidebar**: click *"Or upload a custom .h5 file"* and pick a file from `sample_tiles/`, or
 - **CLI**: copy them into the data folder first, then run batch/single inference:
