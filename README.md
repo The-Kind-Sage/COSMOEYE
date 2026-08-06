@@ -51,13 +51,7 @@ pip install -r requirements.txt
 
 ### 2. Quickstart (use the pretrained model — no GPU, no data, no training)
 
-The trained weights (~31 MB) and tuned threshold are shipped as a GitHub Release (too large for git). Download them with:
-
-```bash
-python tools/download_weights.py
-```
-
-This installs `models/landslide_unet_weights.pth` + `models/landslide_best_threshold.json`. You also need a few sample tiles to run the dashboard — upload any Sen12Landslides `.h5` tile in the sidebar, or obtain the dataset as described in step 3.
+The trained weights and tuned threshold are already included in the repository at `models/landslide_unet_weights.pth` + `models/landslide_best_threshold.json` — no download needed.
 
 Then run the demo immediately:
 
@@ -65,7 +59,9 @@ Then run the demo immediately:
 streamlit run app.py
 ```
 
-> If the script reports "No release found", the release has not been published yet — follow the instructions printed by the script (see [Pretrained model](#pretrained-model)).
+Upload any Sen12Landslides `.h5` tile in the sidebar, or obtain the dataset as described in step 3.
+
+> A GitHub release + `tools/download_weights.py` are also provided as a fallback if you want to fetch refreshed weights without cloning them (see [Pretrained model](#pretrained-model)).
 
 ### 3. Data preparation (only if retraining)
 
@@ -111,14 +107,15 @@ python src/confusion_matrix.py
 
 ## Pretrained model
 
-The trained U-Net weights and its tuned threshold are published as GitHub Release assets (they are too large for git, and are deliberately excluded from the repository):
+The trained U-Net weights and its tuned threshold are committed directly in the repository (gitignore no longer excludes them), so a fresh clone is immediately runnable:
 
-| Asset | Purpose |
+| Asset | Location |
 |---|---|
 | `landslide_unet_weights.pth` | Trained model checkpoint (31 MB, base_filters 64, ~8.2M params) |
 | `landslide_best_threshold.json` | Tuned detection threshold (0.23) + NDVI-gate settings |
+| `models/Old Models/` | Archived checkpoints from earlier runs |
 
-Download them with:
+As a fallback, the same files can be fetched from a GitHub Release without cloning the repo:
 
 ```bash
 python tools/download_weights.py
