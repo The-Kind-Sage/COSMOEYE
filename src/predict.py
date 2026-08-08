@@ -700,11 +700,17 @@ def execute_vision_inference_pass(sample_file_name, save_png=True, verbose=True,
     insight["valid_obs_fraction"] = valid_obs_fraction
 
     # --- Road proximity / blockage check ---
+    # Only evaluated for nepal_* tiles: the road reference table
+    # (local_highways.csv) was digitized for the Sindhupalchok area, so any
+    # other region's detections would produce spurious "Highway blocked" alarms.
     blockage = check_infrastructure_blockage(binary_mask,
-                                             proximity_m=road_proximity_m)
+                                             proximity_m=road_proximity_m,
+                                             tile_name=sample_file_name)
     insight["nearest_road"] = blockage.get("nearest_road")
     insight["nearest_road_dist_m"] = blockage.get("nearest_road_dist_m")
     insight["road_blocked"] = blockage.get("road_blocked", False)
+    insight["road_check_skipped"] = blockage.get("road_check_skipped", False)
+    insight["road_check_reason"] = blockage.get("road_check_reason")
 
     spatial_metrics = extract_spatial_metrics(binary_mask)
 
@@ -714,7 +720,9 @@ def execute_vision_inference_pass(sample_file_name, save_png=True, verbose=True,
         print(f"Valid POST observations: {valid_obs_fraction * 100:.1f}%")
         if valid_obs_fraction < 0.80:
             print(f"  WARNING: low valid-obs coverage — cloud/occlusion may affect results")
-        if blockage.get("road_blocked"):
+        if blockage.get("road_check_skipped"):
+            print(f"  ROAD CHECK SKIPPED: {blockage['road_check_reason']}")
+        elif blockage.get("road_blocked"):
             print(f"  ROAD BLOCKAGE: {blockage['nearest_road']} within "
                   f"{blockage['nearest_road_dist_m']:.0f} m")
         print(f"Discovered Hazard Anomalies Records: {spatial_metrics}")
