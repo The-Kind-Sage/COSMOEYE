@@ -106,14 +106,21 @@ def show_insight(insight):
         )
 
     # ---- Road blockage alert ----
-    if insight.get("road_blocked"):
+    if insight.get("road_check_skipped"):
+        st.info(
+            f"**Road proximity check skipped | सडक नजिकको जाँच छोडियो**  \n"
+            f"{insight.get('road_check_reason') or 'No road reference data '
+             'applies to this tile.'}  \n"
+            f"यो टाइल नेपाल सन्दर्भ क्षेत्रमा नभएकाले सडक अवरुद्ध जाँच गरिएन।"
+        )
+    elif insight.get("road_blocked"):
         road = insight.get("nearest_road", "Unknown road")
         dist_m = insight.get("nearest_road_dist_m", 0.0)
         st.error(
             f"**Road Blockage Alert | सडक अवरुद्ध चेतावनी**  \n"
-            f"**{road}** is potentially obstructed — landslide deposit detected "
-            f"within **{dist_m:.0f} m**. Verify access routes before dispatching "
-            f"field teams."
+            f"**{road}** may be obstructed — landslide deposit detected within "
+            f"**{dist_m:.0f} m** of a road reference point. Verify access "
+            f"routes before dispatching field teams."
         )
     elif insight.get("nearest_road") and insight["detected_pixels"] > 0:
         road = insight["nearest_road"]
@@ -184,16 +191,6 @@ if run_btn:
         st.stop()
 
     st.success("Inference complete")
-
-    # ---- Human-in-the-loop triage disclaimer (always shown, top of results) ----
-    st.warning(
-        "**TRIAGE AID ONLY — NOT A CONFIRMED HAZARD ASSESSMENT**  \n"
-        "This output is a machine-learning screening tool intended to help "
-        "prioritise field surveys. All detections **must be verified by a "
-        "qualified geohazard specialist** before any emergency response or "
-        "infrastructure decisions are made.  \n"
-        "**केवल ट्रायज सहायता — पुष्टि भएको खतरा मूल्याङ्कन होइन।**"
-    )
 
     show_insight(insight)
 
