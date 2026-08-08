@@ -13,6 +13,23 @@ try:
 except ImportError:
     _HIGHWAYS_CSV = os.path.join(os.path.dirname(__file__), "..", "data", "reference", "local_highways.csv")
 
+# local_highways.csv was digitized for the Sindhupalchok / Araniko Highway
+# area of Nepal ONLY. Its pixel_x/pixel_y reference points live in the
+# 128x128 grid of the nepal_* tiles; comparing any other region's detections
+# against them produces meaningless "blockage" alarms (e.g. a Chimanimani
+# tile reporting "Araniko Highway blocked"). The check is therefore gated on
+# the tile name: only nepal_* tiles are evaluated against this table.
+NEPAL_TILE_PREFIX = "nepal"
+NEPAL_TILE_HINT = (f"road check only applies to tiles named "
+                   f"'{NEPAL_TILE_PREFIX}_*' (the tile this reference table "
+                   f"was digitized for)")
+
+
+def _is_nepal_tile(tile_name):
+    if not tile_name:
+        return False
+    return os.path.basename(tile_name).lower().startswith(NEPAL_TILE_PREFIX)
+
 
 def _load_highway_segments(csv_path=_HIGHWAYS_CSV):
     """Parse local_highways.csv and return a list of road-segment dicts.
@@ -44,7 +61,8 @@ def _load_highway_segments(csv_path=_HIGHWAYS_CSV):
 
 
 def check_infrastructure_blockage(binary_mask_array, proximity_m=500.0,
-                                   pixel_size_m=10.0, csv_path=_HIGHWAYS_CSV):
+                                   pixel_size_m=10.0, csv_path=_HIGHWAYS_CSV,
+                                   tile_name=None):
     """Check whether any detected landslide body falls within *proximity_m*
     metres of a road segment listed in local_highways.csv.
 
@@ -63,6 +81,11 @@ def check_infrastructure_blockage(binary_mask_array, proximity_m=500.0,
         Ground resolution in metres per pixel (default 10 m for Sentinel-2).
     csv_path : str
         Override path to local_highways.csv (used by tests).
+    tile_name : str | None
+        Name of the tile being analyzed. The road table is digitized for
+        the nepal_* tiles only; any other tile SKIPS the check and reports
+        road_check_skipped=True so the dashboard never shows a spurious
+        "Araniko Highway blocked" on a non-Nepal tile.
 
     Returns
     -------
@@ -72,13 +95,27 @@ def check_infrastructure_blockage(binary_mask_array, proximity_m=500.0,
         nearest_road_dist_m (float) — Euclidean distance in metres to that road.
         road_blocked (bool)         — True when nearest_road_dist_m < proximity_m.
         road_type (str | None)      — OSM highway type of the nearest road.
+        road_check_skipped (bool)   — True when the check was skipped (tile not
+                                      in the Nepal reference area).
+        road_check_reason (str|None)— why the check was skipped, if it was.
     """
     null_result = {
         "nearest_road": None,
         "nearest_road_dist_m": float("inf"),
         "road_blocked": False,
         "road_type": None,
+        "road_check_skipped": False,
+        "road_check_reason": None,
     }
+
+    if not _is_nepal_tile(tile_name):
+        null_result["road_check_skipped"] = True
+        null_result["road_check_reason"] = (
+            NEPAL_TILE_HINT if tile_name
+            else "no tile name provided - cannot verify the tile is in the "
+                 "Nepal reference area"
+        )
+        return null_result
 
     segments = _load_highway_segments(csv_path)
     if not segments:
@@ -111,10 +148,12 @@ def check_infrastructure_blockage(binary_mask_array, proximity_m=500.0,
 
     best_dist_m = best_dist_px * pixel_size_m
     return {
-        "nearest_road":      best_segment["road_name"],
-        "nearest_road_dist_m": best_dist_m,
-        "road_blocked":      best_dist_m < proximity_m,
-        "road_type":         best_segment["road_type"],
+        "nearest_road":         best_segment["road_name"],
+        "nearest_road_dist_m":  best_dist_m,
+        "road_blocked":         best_dist_m < proximity_m,
+        "road_type":            best_segment["road_type"],
+        "road_check_skipped":   False,
+        "road_check_reason":    None,
     }
 
 
